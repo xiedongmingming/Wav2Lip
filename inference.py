@@ -39,13 +39,13 @@ parser.add_argument(
     help='Video path to save result. See default for an e.g.',
     default='results/result_voice.mp4'
 )
-parser.add_argument(
+parser.add_argument(  # 如果为真则只使用第一视频帧进行推理
     '--static',
     type=bool,
     help='If True, then use only first video frame for inference',
     default=False
 )
-parser.add_argument(
+parser.add_argument(  # 只能在输入为静态图像时指定（默认：25）
     '--fps',
     type=float,
     help='Can be specified only if input is a static image (default: 25)',
@@ -63,7 +63,7 @@ parser.add_argument(
     '--face_det_batch_size',
     type=int,
     help='Batch size for face detection',
-    default=16
+    default=4
 )
 parser.add_argument(
     '--wav2lip_batch_size',
@@ -77,7 +77,7 @@ parser.add_argument(
     type=int,
     help='Reduce the resolution by this factor. Sometimes, best results are obtained at 480p or 720p'
 )
-parser.add_argument(
+parser.add_argument(  # 将视频裁剪到较小的区域(上、下、左、右)。应用于RESIZE_FACTOR和ROTATE参数之后。
     '--crop',
     nargs='+',
     type=int,
@@ -85,7 +85,7 @@ parser.add_argument(
     help='Crop video to a smaller region (top, bottom, left, right). Applied after resize_factor and rotate arg. '
          'Useful if multiple face present. -1 implies the value will be auto-inferred based on height, width'
 )
-parser.add_argument(
+parser.add_argument(  # 为人脸指定一个恒定的边界框。只有在脸部没有被发现的情况下才使用。而且，只有脸部不怎么动的时候才有效。语法：(上、下、左、右)。
     '--box',
     nargs='+',
     type=int,
@@ -142,7 +142,7 @@ def face_detect(images):
 
         try:
 
-            for i in tqdm(range(0, len(images), batch_size)):
+            for i in tqdm(range(0, len(images), batch_size)):  # tqdm：进度条
                 #
                 predictions.extend(detector.get_detections_for_batch(np.array(images[i:i + batch_size])))
 
@@ -199,30 +199,30 @@ def datagen(frames, mels):
     #
     img_batch, mel_batch, frame_batch, coords_batch = [], [], [], []
 
-    if args.box[0] == -1:
+    if args.box[0] == -1:  # 没有指定人脸区域
 
         if not args.static:
             face_det_results = face_detect(frames)  # BGR2RGB for CNN face detection
-        else:
+        else:  # 只使用第一视频帧进行推理
             face_det_results = face_detect([frames[0]])
 
-    else:
+    else:  # 直接使用指定的人脸区域
 
         print('Using the specified bounding box instead of face detection...')
 
         y1, y2, x1, x2 = args.box
 
-        face_det_results = [[f[y1: y2, x1:x2], (y1, y2, x1, x2)] for f in frames]
+        face_det_results = [[f[y1: y2, x1:x2], (y1, y2, x1, x2)] for f in frames]  # 前面是脸部数据而后面是坐标
 
     for i, m in enumerate(mels):
 
-        idx = 0 if args.static else i % len(frames)
+        idx = 0 if args.static else i % len(frames)  # 索引指定帧
 
         frame_to_save = frames[idx].copy()
 
-        face, coords = face_det_results[idx].copy()
+        face, coords = face_det_results[idx].copy()  # 对应的脸部区域数据和坐标
 
-        face = cv2.resize(face, (args.img_size, args.img_size))
+        face = cv2.resize(face, (args.img_size, args.img_size))  # 96 ？？？
 
         img_batch.append(face)
 
@@ -236,13 +236,14 @@ def datagen(frames, mels):
             #
             img_batch, mel_batch = np.asarray(img_batch), np.asarray(mel_batch)
 
-            img_masked = img_batch.copy()
+            img_masked = img_batch.copy()  # {ndarray: (128, 96, 96, 3)}->
 
-            img_masked[:, args.img_size // 2:] = 0
+            img_masked[:, args.img_size // 2:] = 0  # MASK处理：下半张图片数据清空
 
-            img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.
+            img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.  # 把两张图片合成一张（由3个通道变成6个通道）--前三个是MASKED数据
 
-            mel_batch = np.reshape(mel_batch, [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2], 1])
+            mel_batch = np.reshape(mel_batch, [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2],
+                                               1])  # {ndarray: (128, 80, 16, 1)}
 
             yield img_batch, mel_batch, frame_batch, coords_batch
 
@@ -253,6 +254,7 @@ def datagen(frames, mels):
         img_batch, mel_batch = np.asarray(img_batch), np.asarray(mel_batch)
 
         img_masked = img_batch.copy()
+
         img_masked[:, args.img_size // 2:] = 0
 
         img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.
@@ -262,7 +264,7 @@ def datagen(frames, mels):
         yield img_batch, mel_batch, frame_batch, coords_batch
 
 
-mel_step_size = 16
+mel_step_size = 16  # ？？？
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -308,13 +310,13 @@ def main():
 
         raise ValueError('--face argument must be a valid path to video/image file')
 
-    elif args.face.split('.')[1] in ['jpg', 'png', 'jpeg']:
+    elif args.face.split('.')[1] in ['jpg', 'png', 'jpeg']:  # 人脸是图片
 
         full_frames = [cv2.imread(args.face)]
 
         fps = args.fps
 
-    else:
+    else:  # TODO：预处理
 
         video_stream = cv2.VideoCapture(args.face)
 
@@ -326,7 +328,7 @@ def main():
 
         while 1:
 
-            still_reading, frame = video_stream.read()
+            still_reading, frame = video_stream.read()  # frame: {ndarray: (1920, 1080, 3)}
 
             if not still_reading:  # 读取结束
                 #
@@ -342,7 +344,7 @@ def main():
                 #
                 frame = cv2.rotate(frame, cv2.cv2.ROTATE_90_CLOCKWISE)
 
-            y1, y2, x1, x2 = args.crop
+            y1, y2, x1, x2 = args.crop  # 裁剪
 
             if x2 == -1: x2 = frame.shape[1]
             if y2 == -1: y2 = frame.shape[0]
@@ -353,6 +355,8 @@ def main():
 
     print("Number of frames available for inference: " + str(len(full_frames)))
 
+    ##############################################################################
+    # TODO：音频处理--预处理
     if not args.audio.endswith('.wav'):
         #
         print('Extracting raw audio...')
@@ -363,9 +367,9 @@ def main():
 
         args.audio = 'temp/temp.wav'
 
-    wav = audio.load_wav(args.audio, 16000)
+    wav = audio.load_wav(args.audio, 16000)  # {ndarray: (118515, )}
 
-    mel = audio.melspectrogram(wav) # ？？？
+    mel = audio.melspectrogram(wav)  # TODO ？？？{ndarray: (80, 593)}
 
     print(mel.shape)
 
@@ -373,9 +377,9 @@ def main():
         #
         raise ValueError('Mel contains nan! Using a TTS voice? Add a small epsilon noise to the wav file and try again')
 
-    mel_chunks = []
+    mel_chunks = []  # 一个CHUNK对应一帧
 
-    mel_idx_multiplier = 80. / fps
+    mel_idx_multiplier = 80. / fps  # 3.2
 
     i = 0
 
@@ -393,11 +397,11 @@ def main():
 
         i += 1
 
-    print("Length of mel chunks: {}".format(len(mel_chunks)))
+    print("Length of mel chunks: {}".format(len(mel_chunks)))  # list:182->{ndarray: (80, 16)}
 
     full_frames = full_frames[:len(mel_chunks)]
 
-    batch_size = args.wav2lip_batch_size
+    batch_size = args.wav2lip_batch_size  # 默认128帧作为一个批次
 
     gen = datagen(full_frames.copy(), mel_chunks)
 
@@ -411,18 +415,19 @@ def main():
 
             print("Model loaded")
 
-            frame_h, frame_w = full_frames[0].shape[:-1]
+            frame_h, frame_w = full_frames[0].shape[:-1]  # ???
 
             out = cv2.VideoWriter('temp/result.avi', cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
+        # {ndarray: (54, 96, 96, 6)}-->torch.Size([54, 6, 96, 96])
         img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
         mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
 
         with torch.no_grad():
             #
-            pred = model(mel_batch, img_batch)
+            pred = model(mel_batch, img_batch)  # {tensor: (128, 3, 96, 96)}
 
-        pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
+        pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.  # {ndarray: (128, 96, 96, 3)}
 
         for p, f, c in zip(pred, frames, coords):
             #
@@ -436,7 +441,11 @@ def main():
 
     out.release()
 
-    command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
+    command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(
+        args.audio,
+        'temp/result.avi',
+        args.outfile
+    )  # 视频与音频合成
 
     subprocess.call(command, shell=platform.system() != 'Windows')
 

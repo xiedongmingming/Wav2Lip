@@ -28,7 +28,7 @@ class LandmarksType(Enum):
     ``_3D`` - detect the points ``(x,y,z)``` in a 3D space
 
     """
-    _2D = 1
+    _2D = 1  # 检测到的点(X,Y)是在二维空间中检测到的，并且遵循人脸的可见轮廓
     _2halfD = 2
     _3D = 3
 

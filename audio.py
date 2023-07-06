@@ -72,7 +72,7 @@ def linearspectrogram(wav):
     return S
 
 
-def melspectrogram(wav):
+def melspectrogram(wav):  # MEL频谱
     #
     D = _stft(preemphasis(wav, hp.preemphasis, hp.preemphasize))
 
@@ -92,7 +92,7 @@ def _lws_processor():
     return lws.lws(hp.n_fft, get_hop_size(), fftsize=hp.win_size, mode="speech")
 
 
-def _stft(y):
+def _stft(y):  # 傅里叶变换？？？
     #
     if hp.use_lws:
         return _lws_processor(hp).stft(y).T
