@@ -304,7 +304,7 @@ def load_model(path):
 
 def main():
     #
-    if not os.path.isfile(args.face):
+    if not os.path.isfile(args.face):  # 人脸
 
         raise ValueError('--face argument must be a valid path to video/image file')
 
@@ -328,17 +328,17 @@ def main():
 
             still_reading, frame = video_stream.read()
 
-            if not still_reading:
+            if not still_reading:  # 读取结束
                 #
                 video_stream.release()
 
                 break
 
-            if args.resize_factor > 1:
+            if args.resize_factor > 1:  # 缩放因子
                 #
                 frame = cv2.resize(frame, (frame.shape[1] // args.resize_factor, frame.shape[0] // args.resize_factor))
 
-            if args.rotate:
+            if args.rotate:  # 90度旋转
                 #
                 frame = cv2.rotate(frame, cv2.cv2.ROTATE_90_CLOCKWISE)
 
@@ -365,7 +365,7 @@ def main():
 
     wav = audio.load_wav(args.audio, 16000)
 
-    mel = audio.melspectrogram(wav)
+    mel = audio.melspectrogram(wav) # ？？？
 
     print(mel.shape)
 
