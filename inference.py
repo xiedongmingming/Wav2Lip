@@ -100,7 +100,7 @@ parser.add_argument(
     help='Sometimes videos taken from a phone can be flipped 90deg. If true, will flip video right by 90deg.'
          'Use if you get a flipped result, despite feeding a normal looking video'
 )
-parser.add_argument(
+parser.add_argument(  # 防止在短时间窗口内平滑人脸检测
     '--nosmooth',
     default=False,
     action='store_true',
@@ -242,8 +242,10 @@ def datagen(frames, mels):
 
             img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.  # 把两张图片合成一张（由3个通道变成6个通道）--前三个是MASKED数据
 
-            mel_batch = np.reshape(mel_batch, [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2],
-                                               1])  # {ndarray: (128, 80, 16, 1)}
+            mel_batch = np.reshape(  # {ndarray: (128, 80, 16, 1)}
+                mel_batch,
+                [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2], 1]
+            )
 
             yield img_batch, mel_batch, frame_batch, coords_batch
 
@@ -433,6 +435,8 @@ def main():
             #
             y1, y2, x1, x2 = c
 
+            cv2.imwrite('temp/xxx.jpg', p)
+
             p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
 
             f[y1:y2, x1:x2] = p
@@ -448,6 +452,47 @@ def main():
     )  # 视频与音频合成
 
     subprocess.call(command, shell=platform.system() != 'Windows')
+
+
+def save_video(frame_data, video_path, output_path='output/'):
+    #
+    print('save video ..')
+
+    # video_path = cfg.DEMO.DATA_SOURCE
+
+    cap = cv2.VideoCapture(video_path)
+
+    size = (
+        int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    )
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    video_name = video_path.split('/')[-1].split('.')[0] + '.mp4'
+
+    print(output_path + video_name)
+
+    if not os.path.exists(output_path):
+        #
+        os.makedirs(output_path)
+
+    # fourcc = cv2.VideoWriter_fourcc(*'XVID')    # avi格式用
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # mp4格式用
+
+    video_writer = cv2.VideoWriter(
+        output_path + video_name,
+        fourcc,
+        fps,
+        size
+    )  # (cfg.DEMO.DISPLAY_WIDTH, cfg.DEMO.DISPLAY_HEIGHT))
+
+    for i, frame in enumerate(frame_data):
+        # if i > 2:
+        video_writer.write(frame)
+
+    video_writer.release()
 
 
 if __name__ == '__main__':
