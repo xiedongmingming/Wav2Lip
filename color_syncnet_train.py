@@ -81,6 +81,7 @@ class Dataset(object):
             if not isfile(frame):
                 #
                 return None
+
             window_fnames.append(frame)
 
         return window_fnames
@@ -138,6 +139,7 @@ class Dataset(object):
             window_fnames = self.get_window(chosen)
 
             if window_fnames is None:
+                #
                 continue
 
             window = []
@@ -149,6 +151,7 @@ class Dataset(object):
                 img = cv2.imread(fname)
 
                 if img is None:
+                    #
                     all_read = False
 
                     break
@@ -220,6 +223,7 @@ def train(
         checkpoint_interval=None,
         nepochs=None
 ):
+    #
     global global_step, global_epoch
 
     resumed_step = global_step
@@ -415,7 +419,8 @@ if __name__ == "__main__":
         device,
         model,
         train_data_loader,
-        test_data_loader, optimizer,
+        test_data_loader,
+        optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.syncnet_checkpoint_interval,
         nepochs=hparams.nepochs
