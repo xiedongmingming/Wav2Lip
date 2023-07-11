@@ -48,12 +48,12 @@ args = parser.parse_args()
 global_step = 0
 global_epoch = 0
 
-use_cuda = torch.cuda.is_available()
+use_cuda = torch.cuda.is_available()  # 训练的设备CPU或GPU
 
 print('use_cuda: {}'.format(use_cuda))
 
-syncnet_T = 5
-syncnet_mel_step_size = 16
+syncnet_T = 5  # 每次选取200MS的视频片段进行训练，视频的FPS为25，所以200MS对应的帧数为：25*0.2=5帧
+syncnet_mel_step_size = 16  # 200MS对应的声音的MEL-SPECTROGRAM特征的长度为16.
 
 
 class Dataset(object):
@@ -208,11 +208,17 @@ class Dataset(object):
             return x, mel, y
 
 
-logloss = nn.BCELoss()
+###########################################################################
+# 损失函数的定义
+logloss = nn.BCELoss()  # 交叉熵损失
 
 
-def cosine_loss(a, v, y):
-    #
+def cosine_loss(a, v, y):  # 余弦相似度损失
+    """
+    a: AUDIO_ENCODER的输出
+    v: VIDEO FACE_ENCODER的输出
+    y: 是否同步的真实值
+    """
     d = nn.functional.cosine_similarity(a, v)
 
     loss = logloss(d.unsqueeze(1), y)
@@ -228,7 +234,7 @@ def train(
         optimizer,
         checkpoint_dir=None,
         checkpoint_interval=None,
-        nepochs=None
+        nepochs=None  # 指定的EPOCH数
 ):
     #
     global global_step, global_epoch
@@ -247,8 +253,7 @@ def train(
 
             optimizer.zero_grad()
 
-            # Transform data to CUDA device
-            x = x.to(device)
+            x = x.to(device)  # 补全模型的训练：transform data to cuda device
 
             mel = mel.to(device)
 
@@ -257,6 +262,7 @@ def train(
             y = y.to(device)
 
             loss = cosine_loss(a, v, y)
+
             loss.backward()
 
             optimizer.step()
@@ -281,7 +287,13 @@ def train(
                 #
                 with torch.no_grad():
                     #
-                    eval_model(test_data_loader, global_step, device, model, checkpoint_dir)
+                    eval_model(
+                        test_data_loader,
+                        global_step,
+                        device,
+                        model,
+                        checkpoint_dir
+                    )
 
             prog_bar.set_description('Loss: {}'.format(running_loss / (step + 1)))
 
@@ -290,9 +302,11 @@ def train(
 
 def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
     #
+    # 在测试集上进行评估
+    #
     eval_steps = 1400
 
-    print('Evaluating for {} steps'.format(eval_steps))
+    print('evaluating for {} steps'.format(eval_steps))
 
     losses = []
 
@@ -302,8 +316,7 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
 
             model.eval()
 
-            # Transform data to CUDA device
-            x = x.to(device)
+            x = x.to(device)  # transform data to cuda device
 
             mel = mel.to(device)
 
@@ -326,19 +339,23 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
 
 def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
     #
+    # 保存训练的结果CHECKPOINT
+    #
     checkpoint_path = join(
-        checkpoint_dir,
-        "checkpoint_step{:09d}.pth".format(global_step)
+        checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step)
     )
 
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
 
-    torch.save({
-        "state_dict": model.state_dict(),
-        "optimizer": optimizer_state,
-        "global_step": step,
-        "global_epoch": epoch,
-    }, checkpoint_path)
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "optimizer": optimizer_state,
+            "global_step": step,
+            "global_epoch": epoch,
+        },
+        checkpoint_path
+    )
 
     print("Saved checkpoint:", checkpoint_path)
 
@@ -355,22 +372,24 @@ def _load(checkpoint_path):
 
 def load_checkpoint(path, model, optimizer, reset_optimizer=False):
     #
+    # 读取指定CHECKPOINT的保存信息
+    #
     global global_step
     global global_epoch
 
-    print("Load checkpoint from: {}".format(path))
+    print("load checkpoint from: {}".format(path))
 
     checkpoint = _load(path)
 
     model.load_state_dict(checkpoint["state_dict"])
 
-    if not reset_optimizer:
+    if not reset_optimizer:  # 不重置优化器
 
         optimizer_state = checkpoint["optimizer"]
 
         if optimizer_state is not None:
             #
-            print("Load optimizer state from {}".format(path))
+            print("load optimizer state from {}".format(path))
 
             optimizer.load_state_dict(checkpoint["optimizer"])
 
@@ -380,13 +399,28 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
     return model
 
 
+# ds = Dataset("train")
+#
+# x, mel, t = ds[0]
+#
+# print(x.shape)  # 图像数据：torch.Size([15, 48, 96])
+# print(mel.shape)  # 音频数据：torch.Size([1, 80, 16])
+# print(t.shape)  # 标签数据：torch.Size([1])
+# 
+# import matplotlib.pyplot as plt
+#
+# plt.imshow(mel[0].numpy())
+# plt.imshow(x[:3, :, :].transpose(0, 2).numpy())
+
 if __name__ == "__main__":
 
     checkpoint_dir = args.checkpoint_dir  # 保存CHECKPOINT的位置
 
     checkpoint_path = args.checkpoint_path  # 复用路径
 
-    if not os.path.exists(checkpoint_dir): os.mkdir(checkpoint_dir)
+    if not os.path.exists(checkpoint_dir):  # 指定加载CHECKPOINT的路径，第一次训练时不需要，后续如果想从某个CHECKPOINT恢复训练，可指定。
+        #
+        os.mkdir(checkpoint_dir)
 
     #
     # Dataset and Dataloader setup
@@ -409,16 +443,15 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    # Model
-    model = SyncNet().to(device)
+    model = SyncNet().to(device)  # 定义SYNNET模型并加载到指定的DEVICE上
 
     print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
-    optimizer = optim.Adam(
+    optimizer = optim.Adam(  # 定义优化器，使用ADAM（LR参考HPARAMS.PY文件)
         [p for p in model.parameters() if p.requires_grad], lr=hparams.syncnet_lr
     )
 
-    if checkpoint_path is not None:
+    if checkpoint_path is not None:  # 加载预训练的模型
         #
         load_checkpoint(checkpoint_path, model, optimizer, reset_optimizer=False)
 
