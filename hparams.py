@@ -101,7 +101,7 @@ hparams = HParams(
     save_optimizer_state=True,
 
     syncnet_wt=0.0,  # is initially zero, will be set automatically to 0.03 later. Leads to faster convergence.
-    syncnet_batch_size=64,
+    syncnet_batch_size=128, # 默认64
     syncnet_lr=1e-4,
     syncnet_eval_interval=1000,
     syncnet_checkpoint_interval=1000,

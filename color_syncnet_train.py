@@ -62,9 +62,9 @@ class Dataset(object):
 
         self.all_videos = get_image_list(args.data_root, split)
 
-    def get_frame_id(self, frame):
+    def get_frame_id(self, frame):  # f:/workspace/archive/lrs2_preprocessed/6234169082415778641/00029/22.jpg
         #
-        return int(basename(frame).split('.')[0])
+        return int(basename(frame).split('.')[0])  # 索引
 
     def get_window(self, start_frame):
 
@@ -74,7 +74,7 @@ class Dataset(object):
 
         window_fnames = []
 
-        for frame_id in range(start_id, start_id + syncnet_T):
+        for frame_id in range(start_id, start_id + syncnet_T):  # 随后的200MS内的所有帧
 
             frame = join(vidname, '{}.jpg'.format(frame_id))
 
@@ -103,32 +103,37 @@ class Dataset(object):
         return len(self.all_videos)
 
     def __getitem__(self, idx):
-
+        """
+        return: x,mel,y
+        x: 五张嘴唇图片
+        mel：对应的语音的MEL-SPECTROGRAM
+        t：同步OR不同步
+        """
         while 1:
 
-            idx = random.randint(0, len(self.all_videos) - 1)
+            idx = random.randint(0, len(self.all_videos) - 1)  # ？？？为啥重新随机
 
-            vidname = self.all_videos[idx]
+            vidname = self.all_videos[idx]  # f:\\workspace\\archive\\lrs2_preprocessed\\6234169082415778641\\00029
 
             img_names = list(glob(join(vidname, '*.jpg')))
 
-            if len(img_names) <= 3 * syncnet_T:
+            if len(img_names) <= 3 * syncnet_T:  # 3*200MS
                 #
                 continue
 
-            img_name = random.choice(img_names)
+            img_name = random.choice(img_names)  # 随机选一个正样本
 
-            wrong_img_name = random.choice(img_names)
+            wrong_img_name = random.choice(img_names)  # 随机选一个负样本
 
             while wrong_img_name == img_name:
                 #
                 wrong_img_name = random.choice(img_names)
 
-            if random.choice([True, False]):
+            if random.choice([True, False]):  # 随机决定是产生负样本还是正样本
 
-                y = torch.ones(1).float()
+                y = torch.ones(1).float()  # 标签
 
-                chosen = img_name
+                chosen = img_name  # 输入
 
             else:
 
@@ -136,15 +141,15 @@ class Dataset(object):
 
                 chosen = wrong_img_name
 
-            window_fnames = self.get_window(chosen)
+            window_fnames = self.get_window(chosen)  # 200MS内的所有帧
 
             if window_fnames is None:
                 #
                 continue
 
-            window = []
+            window = []  # 存放获取到的帧（调整过尺寸的）
 
-            all_read = True
+            all_read = True  # 是否都成功
 
             for fname in window_fnames:
 
@@ -174,27 +179,29 @@ class Dataset(object):
 
                 wavpath = join(vidname, "audio.wav")
 
-                wav = audio.load_wav(wavpath, hparams.sample_rate)
+                wav = audio.load_wav(wavpath, hparams.sample_rate)  # {ndarray: (29696,)}
 
-                orig_mel = audio.melspectrogram(wav).T
+                orig_mel = audio.melspectrogram(wav).T  # {ndarray: (149, 80)}
 
             except Exception as e:
 
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+            mel = self.crop_audio_window(orig_mel.copy(), img_name)  # {ndarray: (16, 80)}：针对图片200MS区间内的MEL频谱数据
 
             if (mel.shape[0] != syncnet_mel_step_size):
                 #
                 continue
-
+            #
             # H x W x 3 * T
-            x = np.concatenate(window, axis=2) / 255.
+            #
+            x = np.concatenate(window, axis=2) / 255.  # {ndarray: (96, 96, 15)}：200MS内的图片数据合并
 
-            x = x.transpose(2, 0, 1)
-            x = x[:, x.shape[1] // 2:]
+            x = x.transpose(2, 0, 1)  # 转置：(15像素值，长，宽)
 
-            x = torch.FloatTensor(x)
+            x = x[:, x.shape[1] // 2:]  # 下半部分
+
+            x = torch.FloatTensor(x)  # {Tensor: {15, 48, 96}}
 
             mel = torch.FloatTensor(mel.T).unsqueeze(0)
 
