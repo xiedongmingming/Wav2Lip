@@ -4,8 +4,11 @@ import torch.nn.functional as F
 
 
 class L2Norm(nn.Module):
+
     def __init__(self, n_channels, scale=1.0):
+
         super(L2Norm, self).__init__()
+
         self.n_channels = n_channels
         self.scale = scale
         self.eps = 1e-10
@@ -68,12 +71,15 @@ class s3fd(nn.Module):
         self.conv7_2_mbox_loc = nn.Conv2d(256, 4, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x):
+
         h = F.relu(self.conv1_1(x))
         h = F.relu(self.conv1_2(h))
+
         h = F.max_pool2d(h, 2, 2)
 
         h = F.relu(self.conv2_1(h))
         h = F.relu(self.conv2_2(h))
+
         h = F.max_pool2d(h, 2, 2)
 
         h = F.relu(self.conv3_1(h))
@@ -123,7 +129,9 @@ class s3fd(nn.Module):
 
         # max-out background label
         chunk = torch.chunk(cls1, 4, 1)
+
         bmax = torch.max(torch.max(chunk[0], chunk[1]), chunk[2])
+        
         cls1 = torch.cat([bmax, chunk[3]], dim=1)
 
         return [cls1, reg1, cls2, reg2, cls3, reg3, cls4, reg4, cls5, reg5, cls6, reg6]

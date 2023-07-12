@@ -406,7 +406,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 # print(x.shape)  # 图像数据：torch.Size([15, 48, 96])
 # print(mel.shape)  # 音频数据：torch.Size([1, 80, 16])
 # print(t.shape)  # 标签数据：torch.Size([1])
-# 
+#
 # import matplotlib.pyplot as plt
 #
 # plt.imshow(mel[0].numpy())
