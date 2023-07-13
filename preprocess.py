@@ -1,4 +1,7 @@
+import shutil
 import sys
+
+import torch
 
 if sys.version_info[0] < 3 and sys.version_info[1] < 2:
     #
@@ -37,7 +40,7 @@ parser.add_argument(
 parser.add_argument(
     '--batch_size',
     help='Single GPU Face detection batch size',
-    default=32,
+    default=128,
     type=int
 )
 parser.add_argument(
@@ -54,9 +57,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 fa = [face_detection.FaceAlignment(
-    face_detection.LandmarksType._2D,
-    flip_input=False,
-    device='cuda:{}'.format(id)
+    face_detection.LandmarksType._2D, flip_input=False, device='cuda:{}'.format(id)
 ) for id in range(args.ngpu)]
 
 template = 'ffmpeg -loglevel panic -y -i {} -strict -2 {}'
@@ -82,13 +83,21 @@ def process_video_file(vfile, args, gpu_id):
 
         frames.append(frame)
 
-    vidname = os.path.basename(vfile).split('.')[0]
+    vidname = os.path.basename(vfile).rsplit('.', 1)[0] # 原始文件名
 
-    dirname = vfile.split('/')[-2]
+    dirname = '\\'.join(vfile.split('\\')[-4:-1])
 
     fulldir = path.join(args.preprocessed_root, dirname, vidname)
 
     os.makedirs(fulldir, exist_ok=True)
+
+    filelist = glob(path.join(fulldir, '*.jpg'))
+
+    if len(filelist) == len(frames):
+
+        print('\n当前文件已经处理过了：{0}'.format(vfile))
+
+        return
 
     batches = [frames[i:i + args.batch_size] for i in range(0, len(frames), args.batch_size)]
 
@@ -110,12 +119,13 @@ def process_video_file(vfile, args, gpu_id):
 
             cv2.imwrite(path.join(fulldir, '{}.jpg'.format(i)), fb[j][y1:y2, x1:x2])
 
+    torch.cuda.empty_cache()
 
-def process_audio_file(vfile, args):
+def process_audio_file(vfile, args): # 央视视频和音频分开了
     #
-    vidname = os.path.basename(vfile).split('.')[0]
+    vidname = os.path.basename(vfile).rsplit('.', 1)[0]
 
-    dirname = vfile.split('/')[-2]
+    dirname = '\\'.join(vfile.split('\\')[-4:-1])
 
     fulldir = path.join(args.preprocessed_root, dirname, vidname)
 
@@ -123,10 +133,11 @@ def process_audio_file(vfile, args):
 
     wavpath = path.join(fulldir, 'audio.wav')
 
-    command = template.format(vfile, wavpath)
+    shutil.copyfile(vfile.replace('video', 'audio').replace('.mp4', '.wav'), wavpath)
 
-    subprocess.call(command, shell=True)
-
+    # command = template.format(vfile, wavpath)
+    #
+    # subprocess.call(command, shell=True)
 
 def mp_handler(job):
     #
@@ -140,11 +151,11 @@ def mp_handler(job):
         traceback.print_exc()
 
 
-def main(args):
+def main(args): # 102072
     #
     print('Started processing for {} with {} GPUs'.format(args.data_root, args.ngpu))
 
-    filelist = glob(path.join(args.data_root, '*/*.mp4'))
+    filelist = glob(path.join(args.data_root, '*/*/*.mp4'))
 
     jobs = [(vfile, args, i % args.ngpu) for i, vfile in enumerate(filelist)]
 
@@ -171,8 +182,9 @@ def main(args):
             traceback.print_exc()
 
             continue
-
-
+#
+# !python preprocess.py --data_root "./mvlrs_v1/main" --preprocessed_root "./lrs2_preprocessed"
+#
 if __name__ == '__main__':
     #
     main(args)
