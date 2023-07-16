@@ -520,6 +520,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
     return model
 
 
+# !python wav2lip_train.py --data_root F:\datasets\lrs2_preprocessed --checkpoint_dir ./checkpoints/ --syncnet_checkpoint_path F:\datasets\syncnet_checkpoints\checkpoint_step000211000.pth
 if __name__ == "__main__":
     #
     checkpoint_dir = args.checkpoint_dir

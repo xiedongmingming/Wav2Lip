@@ -447,12 +447,12 @@ def train(
                         hparams.set_hparam('syncnet_wt', 0.03)
 
             prog_bar.set_description('L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(
-                    running_l1_loss / (step + 1),
-                    running_sync_loss / (step + 1),
-                    running_perceptual_loss / (step + 1),
-                    running_disc_fake_loss / (step + 1),
-                    running_disc_real_loss / (step + 1)
-                )
+                running_l1_loss / (step + 1),
+                running_sync_loss / (step + 1),
+                running_perceptual_loss / (step + 1),
+                running_disc_fake_loss / (step + 1),
+                running_disc_real_loss / (step + 1)
+            )
             )
 
         global_epoch += 1
