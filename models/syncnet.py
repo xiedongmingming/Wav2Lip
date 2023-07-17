@@ -62,7 +62,11 @@ class SyncNet_color(nn.Module):
         )
 
     def forward(self, audio_sequences, face_sequences):  # audio_sequences := (B, dim, T)
-
+        #
+        # audio_sequences: {Tensor: (128, 1, 80, 16)}
+        #
+        # face_sequences: {Tensor: (128, 15, 48, 96)}
+        #
         face_embedding = self.face_encoder(face_sequences)
 
         audio_embedding = self.audio_encoder(audio_sequences)

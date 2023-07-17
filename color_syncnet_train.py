@@ -45,8 +45,8 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-global_step = 0
-global_epoch = 0
+global_step = 0  # 历史总STEP
+global_epoch = 0  # 历史总EPOCH
 
 use_cuda = torch.cuda.is_available()  # 训练的设备CPU或GPU
 
@@ -64,7 +64,7 @@ class Dataset(object):
 
     def get_frame_id(self, frame):  # f:/workspace/archive/lrs2_preprocessed/6234169082415778641/00029/22.jpg
         #
-        return int(basename(frame).split('.')[0])  # 索引
+        return int(basename(frame).split('.')[0])  # 视频帧索引编号
 
     def get_window(self, start_frame):
 
@@ -78,7 +78,7 @@ class Dataset(object):
 
             frame = join(vidname, '{}.jpg'.format(frame_id))
 
-            if not isfile(frame):
+            if not isfile(frame):  # 必须是连贯的帧
                 #
                 return None
 
@@ -111,19 +111,19 @@ class Dataset(object):
         """
         while 1:
 
-            idx = random.randint(0, len(self.all_videos) - 1)  # ？？？为啥重新随机
+            idx = random.randint(0, len(self.all_videos) - 1)  # 随机选一个视频
 
-            vidname = self.all_videos[idx]  # f:\\workspace\\archive\\lrs2_preprocessed\\6234169082415778641\\00029
+            vidname = self.all_videos[idx]  # 对应视频文件夹：lrs2_preprocessed/6234169082415778641/00029
 
-            img_names = list(glob(join(vidname, '*.jpg')))
+            img_names = list(glob(join(vidname, '*.jpg')))  # 该视频对应的所有帧
 
             if len(img_names) <= 3 * syncnet_T:  # 3*200MS
                 #
                 continue
 
-            img_name = random.choice(img_names)  # 随机选一个正样本
+            img_name = random.choice(img_names)  # 随机选一个正样本（图片名称）
 
-            wrong_img_name = random.choice(img_names)  # 随机选一个负样本
+            wrong_img_name = random.choice(img_names)  # 随机选一个负样本（图片名称）
 
             while wrong_img_name == img_name:
                 #
@@ -141,7 +141,7 @@ class Dataset(object):
 
                 chosen = wrong_img_name
 
-            window_fnames = self.get_window(chosen)  # 200MS内的所有帧
+            window_fnames = self.get_window(chosen)  # 目标图片对应位置200MS内的所有帧名称
 
             if window_fnames is None:
                 #
@@ -163,7 +163,7 @@ class Dataset(object):
 
                 try:
 
-                    img = cv2.resize(img, (hparams.img_size, hparams.img_size))
+                    img = cv2.resize(img, (hparams.img_size, hparams.img_size))  # 调整尺寸
 
                 except Exception as e:
 
@@ -191,9 +191,9 @@ class Dataset(object):
 
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)  # {ndarray: (16, 80)}：针对图片200MS区间内的MEL频谱数据
+            mel = self.crop_audio_window(orig_mel.copy(), img_name)  # {ndarray: (16, 80)}：针对正样本图片200MS区间内的MEL频谱数据
 
-            if (mel.shape[0] != syncnet_mel_step_size):
+            if mel.shape[0] != syncnet_mel_step_size:
                 #
                 continue
             #
@@ -209,10 +209,14 @@ class Dataset(object):
 
             mel = torch.FloatTensor(mel.T).unsqueeze(0)
 
+            # x: {Tensor: (15, 48, 96)}
+            # mel: {Tensor: (1, 80, 16)}
+            # y: {Tensor: (1,)}
             return x, mel, y
 
+        ###########################################################################
 
-###########################################################################
+
 # 损失函数的定义
 logloss = nn.BCELoss()  # 交叉熵损失
 
@@ -234,7 +238,7 @@ def train(
         device,
         model,
         train_data_loader,
-        test_data_loader,
+        tests_data_loader,
         optimizer,
         checkpoint_dir=None,
         checkpoint_interval=None,
@@ -261,7 +265,7 @@ def train(
 
             mel = mel.to(device)
 
-            a, v = model(mel, x)
+            a, v = model(mel, x)  # 数据输入：
 
             y = y.to(device)
 
@@ -292,7 +296,7 @@ def train(
                 with torch.no_grad():
                     #
                     eval_model(
-                        test_data_loader,
+                        tests_data_loader,
                         global_step,
                         device,
                         model,
@@ -420,29 +424,30 @@ if __name__ == "__main__":
 
     checkpoint_dir = args.checkpoint_dir  # 保存CHECKPOINT的位置
 
-    checkpoint_path = args.checkpoint_path  # 复用路径
+    checkpoint_path = args.checkpoint_path  # 指定加载CHECKPOINT的路径，第一次训练时不需要，后续如果想从某个CHECKPOINT恢复训练，可指定。
 
-    if not os.path.exists(checkpoint_dir):  # 指定加载CHECKPOINT的路径，第一次训练时不需要，后续如果想从某个CHECKPOINT恢复训练，可指定。
+    if not os.path.exists(checkpoint_dir):
         #
         os.mkdir(checkpoint_dir)
 
     #
-    # Dataset and Dataloader setup
+    # 创建数据集和数据加载器
     #
     train_dataset = Dataset('train')
-    test_dataset = Dataset('val')
+    tests_dataset = Dataset('val')
 
     train_data_loader = data_utils.DataLoader(
         train_dataset,
         batch_size=hparams.syncnet_batch_size,
         shuffle=True,
-        num_workers=hparams.num_workers
+        num_workers=1  # hparams.num_workers
     )
 
-    test_data_loader = data_utils.DataLoader(
-        test_dataset,
+    tests_data_loader = data_utils.DataLoader(
+        tests_dataset,
         batch_size=hparams.syncnet_batch_size,
-        num_workers=8
+        # shuffle=False,
+        num_workers=1  # 8
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -452,7 +457,8 @@ if __name__ == "__main__":
     print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     optimizer = optim.Adam(  # 定义优化器，使用ADAM（LR参考HPARAMS.PY文件)
-        [p for p in model.parameters() if p.requires_grad], lr=hparams.syncnet_lr
+        [p for p in model.parameters() if p.requires_grad],  # 指定需要优化的参数
+        lr=hparams.syncnet_lr
     )
 
     if checkpoint_path is not None:  # 加载预训练的模型
@@ -463,7 +469,7 @@ if __name__ == "__main__":
         device,
         model,
         train_data_loader,
-        test_data_loader,
+        tests_data_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.syncnet_checkpoint_interval,
