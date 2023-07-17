@@ -167,6 +167,8 @@ class Dataset(object):
 
                 except Exception as e:
 
+                    print('resize: {}'.format(e))
+
                     all_read = False
 
                     break
@@ -184,6 +186,8 @@ class Dataset(object):
                 orig_mel = audio.melspectrogram(wav).T  # {ndarray: (149, 80)}
 
             except Exception as e:
+
+                print('melspectrogram: {}'.format(e))
 
                 continue
 
