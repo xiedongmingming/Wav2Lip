@@ -419,6 +419,13 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 #
 # plt.imshow(mel[0].numpy())
 # plt.imshow(x[:3, :, :].transpose(0, 2).numpy())
+#
+# 功能：音频和嘴唇同步
+# 实质：判断音频和唇形在某个共同参数空间下的相似性。
+#
+# 网络结构：一种伪孪生网络结构，分别提取嘴形特征和音频特征，然后通过对比损失计算两者之间的距离。
+#       face_encoder
+#       audio_encoder
 
 if __name__ == "__main__":
 

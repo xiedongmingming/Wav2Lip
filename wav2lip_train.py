@@ -109,8 +109,13 @@ class Dataset(object):
                 return None
 
             try:
+
                 img = cv2.resize(img, (hparams.img_size, hparams.img_size))
+
             except Exception as e:
+
+                print('resize: {}'.format(e))
+
                 return None
 
             window.append(img)
@@ -136,7 +141,7 @@ class Dataset(object):
 
         assert syncnet_T == 5
 
-        start_frame_num = self.get_frame_id(start_frame) + 1  # 0-indexing ---> 1-indexing
+        start_frame_num = self.get_frame_id(start_frame) + 1  # +1？？？0-indexing ---> 1-indexing
 
         if start_frame_num - 2 < 0: return None
 
@@ -161,7 +166,7 @@ class Dataset(object):
         x = np.asarray(window) / 255.
         x = np.transpose(x, (3, 0, 1, 2))
 
-        return x
+        return x  # {ndarray: (3, 5, 96, 96)}
 
     def __len__(self):
         #
@@ -171,7 +176,7 @@ class Dataset(object):
 
         while 1:
 
-            idx = random.randint(0, len(self.all_videos) - 1)
+            idx = random.randint(0, len(self.all_videos) - 1)  # 随机获取一个视频索引
 
             vidname = self.all_videos[idx]
 
@@ -189,9 +194,9 @@ class Dataset(object):
                 #
                 wrong_img_name = random.choice(img_names)
 
-            window_fnames = self.get_window(img_name)
+            window_fnames = self.get_window(img_name)  # 正样例（窗口）
 
-            wrong_window_fnames = self.get_window(wrong_img_name)
+            wrong_window_fnames = self.get_window(wrong_img_name)  # 负样例（窗口）
 
             if window_fnames is None or wrong_window_fnames is None:
                 #
@@ -219,15 +224,17 @@ class Dataset(object):
 
             except Exception as e:
                 #
+                print('melspectrogram: {}'.format(e))
+
                 continue
 
             mel = self.crop_audio_window(orig_mel.copy(), img_name)
 
-            if (mel.shape[0] != syncnet_mel_step_size):
+            if mel.shape[0] != syncnet_mel_step_size:
                 #
                 continue
 
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name)
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name)  # ？？？
 
             if indiv_mels is None: continue
 
@@ -235,19 +242,27 @@ class Dataset(object):
 
             y = window.copy()
 
-            window[:, :, window.shape[2] // 2:] = 0.
+            window[:, :, window.shape[2] // 2:] = 0.  # 下半部分清空
 
             wrong_window = self.prepare_window(wrong_window)
 
+            ##########################################################
             x = np.concatenate([window, wrong_window], axis=0)
 
             x = torch.FloatTensor(x)
 
-            mel = torch.FloatTensor(mel.T).unsqueeze(0)
+            mel = torch.FloatTensor(mel.T).unsqueeze(0)  # {Tensor: (1, 80, 16)}
 
             indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)
 
             y = torch.FloatTensor(y)
+
+            # x: {Tensor: (6, 5, 96, 96)}
+            # y: {Tensor: (3, 5, 96, 96)}
+
+            # mel: {Tensor: (1, 80, 16)}
+
+            # indiv_mels: {Tensor: (5, 1, 80, 16)}
 
             return x, indiv_mels, mel, y
 
@@ -316,7 +331,7 @@ def train(
         device,
         model,
         train_data_loader,
-        test_data_loader,
+        tests_data_loader,
         optimizer,
         checkpoint_dir=None,
         checkpoint_interval=None,
@@ -329,7 +344,7 @@ def train(
 
     while global_epoch < nepochs:
         #
-        print('Starting Epoch: {}'.format(global_epoch))
+        print('starting epoch: {}'.format(global_epoch))
 
         running_sync_loss, running_l1_loss = 0., 0.
 
@@ -384,14 +399,24 @@ def train(
             if global_step == 1 or global_step % checkpoint_interval == 0:
                 #
                 save_checkpoint(
-                    model, optimizer, global_step, checkpoint_dir, global_epoch
+                    model,
+                    optimizer,
+                    global_step,
+                    checkpoint_dir,
+                    global_epoch
                 )
 
             if global_step == 1 or global_step % hparams.eval_interval == 0:
 
                 with torch.no_grad():
 
-                    average_sync_loss = eval_model(test_data_loader, global_step, device, model, checkpoint_dir)
+                    average_sync_loss = eval_model(
+                        tests_data_loader,
+                        global_step,
+                        device,
+                        model,
+                        checkpoint_dir
+                    )
 
                     if average_sync_loss < .75:
                         #
@@ -529,20 +554,20 @@ if __name__ == "__main__":
     # Dataset and Dataloader setup
     #
     train_dataset = Dataset('train')
-
-    test_dataset = Dataset('val')
+    tests_dataset = Dataset('val')
 
     train_data_loader = data_utils.DataLoader(
         train_dataset,
         batch_size=hparams.batch_size,
         shuffle=True,
-        num_workers=hparams.num_workers
+        num_workers=hparams.num_workers,
     )
 
-    test_data_loader = data_utils.DataLoader(
-        test_dataset,
+    tests_data_loader = data_utils.DataLoader(
+        tests_dataset,
         batch_size=hparams.batch_size,
-        num_workers=4
+        # shuffle=False,
+        num_workers=4,
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -569,7 +594,7 @@ if __name__ == "__main__":
         device,
         model,
         train_data_loader,
-        test_data_loader,
+        tests_data_loader,
         optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.checkpoint_interval,
