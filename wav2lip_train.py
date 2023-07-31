@@ -94,9 +94,11 @@ class Dataset(object):
 
         return window_fnames
 
-    def read_window(self, window_fnames):
+    def read_window(self, window_fnames):  # 改动
 
-        if window_fnames is None: return None
+        if window_fnames is None:
+            #
+            return None
 
         window = []
 
@@ -120,11 +122,11 @@ class Dataset(object):
 
             window.append(img)
 
-        return window
+        return window  # list{ 5 * ndarray: (96, 96, 3) }
 
     def crop_audio_window(self, spec, start_frame):
 
-        if type(start_frame) == int:
+        if type(start_frame) == int:  # 改动：支持直接指定ID
             start_frame_num = start_frame
         else:
             start_frame_num = self.get_frame_id(start_frame)  # 0-indexing ---> 1-indexing
@@ -135,7 +137,7 @@ class Dataset(object):
 
         return spec[start_idx: end_idx, :]
 
-    def get_segmented_mels(self, spec, start_frame):
+    def get_segmented_mels(self, spec, start_frame):  # 改动：
 
         mels = []
 
@@ -143,7 +145,9 @@ class Dataset(object):
 
         start_frame_num = self.get_frame_id(start_frame) + 1  # +1？？？0-indexing ---> 1-indexing
 
-        if start_frame_num - 2 < 0: return None
+        if start_frame_num - 2 < 0:
+            #
+            return None
 
         for i in range(start_frame_num, start_frame_num + syncnet_T):
 
@@ -157,9 +161,9 @@ class Dataset(object):
 
         mels = np.asarray(mels)
 
-        return mels
+        return mels  # {ndarray: (5, 80, 16)}
 
-    def prepare_window(self, window):
+    def prepare_window(self, window):  # 改动：
         #
         # 3 x T x H x W
         #
@@ -186,25 +190,24 @@ class Dataset(object):
                 #
                 continue
 
-            img_name = random.choice(img_names)
+            right_img_name = random.choice(img_names)  # 随机选一个正样本（图片名称）
+            wrong_img_name = random.choice(img_names)  # 随机选一个负样本（图片名称）
 
-            wrong_img_name = random.choice(img_names)
-
-            while wrong_img_name == img_name:
+            while wrong_img_name == right_img_name:
                 #
                 wrong_img_name = random.choice(img_names)
 
-            window_fnames = self.get_window(img_name)  # 正样例（窗口）
-
+            ########################################################################
+            right_window_fnames = self.get_window(right_img_name)  # 正样例（窗口）
             wrong_window_fnames = self.get_window(wrong_img_name)  # 负样例（窗口）
 
-            if window_fnames is None or wrong_window_fnames is None:
+            if right_window_fnames is None or wrong_window_fnames is None:
                 #
                 continue
 
-            window = self.read_window(window_fnames)
+            right_window = self.read_window(right_window_fnames)
 
-            if window is None:
+            if right_window is None:
                 #
                 continue
 
@@ -214,13 +217,14 @@ class Dataset(object):
                 #
                 continue
 
+            ########################################################################
             try:
 
                 wavpath = join(vidname, "audio.wav")
 
                 wav = audio.load_wav(wavpath, hparams.sample_rate)
 
-                orig_mel = audio.melspectrogram(wav).T
+                orig_mel = audio.melspectrogram(wav).T  # {ndarray: (108, 80)}
 
             except Exception as e:
                 #
@@ -228,41 +232,45 @@ class Dataset(object):
 
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+            mel = self.crop_audio_window(orig_mel.copy(), right_img_name)  # {ndarray: (16, 80)}：针对正样本图片200MS区间内的MEL频谱数据
 
             if mel.shape[0] != syncnet_mel_step_size:
                 #
                 continue
 
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name)  # ？？？
+            ########################################################################
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(), right_img_name)  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
 
-            if indiv_mels is None: continue
+            if indiv_mels is None:
+                #
+                continue
 
-            window = self.prepare_window(window)
+            ########################################################################
+            right_window = self.prepare_window(right_window)  # {ndarray: (3, 5, 96, 96)}
 
-            y = window.copy()
+            y = right_window.copy()
 
-            window[:, :, window.shape[2] // 2:] = 0.  # 下半部分清空
+            right_window[:, :, right_window.shape[2] // 2:] = 0.  # 下半部分清空
 
-            wrong_window = self.prepare_window(wrong_window)
+            wrong_window = self.prepare_window(wrong_window)  # {ndarray: (3, 5, 96, 96)}
 
             ##########################################################
-            x = np.concatenate([window, wrong_window], axis=0)
+            x = np.concatenate([right_window, wrong_window], axis=0)  # {Tensor: (6, 5, 96, 96)}
 
             x = torch.FloatTensor(x)
 
             mel = torch.FloatTensor(mel.T).unsqueeze(0)  # {Tensor: (1, 80, 16)}
 
-            indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)
+            indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)  # 附近[-1:4]帧对应的MEL值
 
-            y = torch.FloatTensor(y)
+            y = torch.FloatTensor(y)  # y: {Tensor: (3, 5, 96, 96)}
 
-            # x: {Tensor: (6, 5, 96, 96)}
-            # y: {Tensor: (3, 5, 96, 96)}
+            # x: {Tensor: (6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
+            # y: {Tensor: (3, 5, 96, 96)} -- 正样本
 
-            # mel: {Tensor: (1, 80, 16)}
+            # mel: {Tensor: (1, 80, 16)} -- 正样本音频
 
-            # indiv_mels: {Tensor: (5, 1, 80, 16)}
+            # indiv_mels: {Tensor: (5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
 
             return x, indiv_mels, mel, y
 
@@ -551,7 +559,7 @@ if __name__ == "__main__":
     checkpoint_dir = args.checkpoint_dir
 
     #
-    # Dataset and Dataloader setup
+    # dataset and dataloader setup
     #
     train_dataset = Dataset('train')
     tests_dataset = Dataset('val')

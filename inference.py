@@ -102,7 +102,8 @@ parser.add_argument(
 )
 parser.add_argument(  # 防止在短时间窗口内平滑人脸检测
     '--nosmooth',
-    default=False,
+    # default=False,
+    default=True,
     action='store_true',
     help='Prevent smoothing face detections over a short temporal window'
 )
@@ -118,7 +119,7 @@ if os.path.isfile(args.face) and args.face.split('.')[1] in ['jpg', 'png', 'jpeg
 
 def get_smoothened_boxes(boxes, T):
     #
-    for i in range(len(boxes)):
+    for i in range(len(boxes)):  # 没一帧的人脸
 
         if i + T > len(boxes):
             window = boxes[len(boxes) - T:]
@@ -134,7 +135,7 @@ def face_detect(images):
     #
     detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, flip_input=False, device=device)
 
-    batch_size = args.face_det_batch_size
+    batch_size = args.face_det_batch_size  # 人脸检测的批大小
 
     while 1:
 
@@ -151,12 +152,12 @@ def face_detect(images):
             if batch_size == 1:
                 #
                 raise RuntimeError(
-                    'Image too big to run face detection on GPU. Please use the --resize_factor argument'
+                    'image too big to run face detection on gpu. please use the --resize_factor argument'
                 )
 
             batch_size //= 2
 
-            print('Recovering from OOM error; New batch size: {}'.format(batch_size))
+            print('recovering from oom error; new batch size: {}'.format(batch_size))
 
             continue
 
@@ -164,51 +165,68 @@ def face_detect(images):
 
     results = []
 
-    pady1, pady2, padx1, padx2 = args.pads
+    pady1, pady2, padx1, padx2 = args.pads  # (top, bottom, left, right)
 
-    for rect, image in zip(predictions, images):
-
+    for rect, image in zip(predictions, images):  # rect: (x1, y1, x2, y2)
+        #
+        # cv2.imwrite('temp/demo-001.jpg', images[0][y1:y2,x1:x2,:])
+        #
         if rect is None:
             #
             cv2.imwrite('temp/faulty_frame.jpg', image)  # check this frame where the face was not detected.
 
-            raise ValueError('Face not detected! Ensure the video contains a face in all the frames.')
+            raise ValueError('face not detected! ensure the video contains a face in all the frames.')
 
-        y1 = max(0, rect[1] - pady1)
+        y1 = max(0, rect[1] - pady1)  # y1
 
-        y2 = min(image.shape[0], rect[3] + pady2)
+        y2 = min(image.shape[0], rect[3] + pady2)  # y2+pad
 
-        x1 = max(0, rect[0] - padx1)
+        x1 = max(0, rect[0] - padx1)  # x1
 
-        x2 = min(image.shape[1], rect[2] + padx2)
+        x2 = min(image.shape[1], rect[2] + padx2)  # x2+pad
 
         results.append([x1, y1, x2, y2])
 
+        # cv2.imwrite('temp/demo-001.jpg', images[0][y1:y2, x1:x2, :])
+
     boxes = np.array(results)
 
-    if not args.nosmooth: boxes = get_smoothened_boxes(boxes, T=5)
+    if not args.nosmooth:
+        #
+        boxes = get_smoothened_boxes(boxes, T=5)
 
-    results = [[image[y1: y2, x1:x2], (y1, y2, x1, x2)] for image, (x1, y1, x2, y2) in zip(images, boxes)]
+    results = [
+        [
+            image[y1: y2, x1:x2], (y1, y2, x1, x2)
+        ] for image, (x1, y1, x2, y2) in zip(images, boxes)
+    ]
 
     del detector
 
-    return results
+    return results  # 得到人脸图像
 
 
-def datagen(frames, mels):
+def datagen(frames, mels):  # 视频帧+音频MEL
+    #
+    # img_batch: 人脸数据（RESIZE之后）
+    # mel_batch: 对应的音频数据
+    # frame_batch：视频帧
+    # coords_batch：人脸坐标
     #
     img_batch, mel_batch, frame_batch, coords_batch = [], [], [], []
 
+    face_batch = []
+
     if args.box[0] == -1:  # 没有指定人脸区域
 
-        if not args.static:
-            face_det_results = face_detect(frames)  # BGR2RGB for CNN face detection
-        else:  # 只使用第一视频帧进行推理
+        if not args.static:  # 视频
+            face_det_results = face_detect(frames)  # bgr2rgb for cnn face detection
+        else:  # 图片：只使用第一视频帧进行推理
             face_det_results = face_detect([frames[0]])
 
     else:  # 直接使用指定的人脸区域
 
-        print('Using the specified bounding box instead of face detection...')
+        print('using the specified bounding box instead of face detection...')
 
         y1, y2, x1, x2 = args.box
 
@@ -222,7 +240,11 @@ def datagen(frames, mels):
 
         face, coords = face_det_results[idx].copy()  # 对应的脸部区域数据和坐标
 
-        face = cv2.resize(face, (args.img_size, args.img_size))  # 96 ？？？
+        orgin = face.copy()
+
+        face_batch.append(orgin)
+
+        face = cv2.resize(face, (args.img_size, args.img_size), interpolation=cv2.INTER_AREA)  # 96 ？？？
 
         img_batch.append(face)
 
@@ -240,18 +262,19 @@ def datagen(frames, mels):
 
             img_masked[:, args.img_size // 2:] = 0  # MASK处理：下半张图片数据清空
 
-            img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.  # 把两张图片合成一张（由3个通道变成6个通道）--前三个是MASKED数据
+            # 把两张图片合成一张（由3个通道变成6个通道）--前三个是MASKED数据后三个是正常数据（都是RESIZE过的）
+            img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.
 
             mel_batch = np.reshape(  # {ndarray: (128, 80, 16, 1)}
                 mel_batch,
                 [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2], 1]
             )
 
-            yield img_batch, mel_batch, frame_batch, coords_batch
+            yield face_batch, img_batch, mel_batch, frame_batch, coords_batch
 
-            img_batch, mel_batch, frame_batch, coords_batch = [], [], [], []
+            face_batch, img_batch, mel_batch, frame_batch, coords_batch = [], [], [], [], []
 
-    if len(img_batch) > 0:
+    if len(img_batch) > 0:  # 不够一个批次？
         #
         img_batch, mel_batch = np.asarray(img_batch), np.asarray(mel_batch)
 
@@ -261,16 +284,19 @@ def datagen(frames, mels):
 
         img_batch = np.concatenate((img_masked, img_batch), axis=3) / 255.
 
-        mel_batch = np.reshape(mel_batch, [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2], 1])
+        mel_batch = np.reshape(
+            mel_batch,
+            [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2], 1]
+        )
 
-        yield img_batch, mel_batch, frame_batch, coords_batch
+        yield face_batch, img_batch, mel_batch, frame_batch, coords_batch
 
 
-mel_step_size = 16  # ？？？
+mel_step_size = 16  #
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-print('Using {} for inference.'.format(device))
+print('using {} for inference.'.format(device))
 
 
 def _load(checkpoint_path):
@@ -287,7 +313,7 @@ def load_model(path):
     #
     model = Wav2Lip()
 
-    print("Load checkpoint from: {}".format(path))
+    print("load checkpoint from: {}".format(path))
 
     checkpoint = _load(path)
 
@@ -295,7 +321,7 @@ def load_model(path):
 
     new_s = {}
 
-    for k, v in s.items():
+    for k, v in s.items():  # ？？？把K中的MODULE去除
         #
         new_s[k.replace('module.', '')] = v
 
@@ -308,7 +334,7 @@ def load_model(path):
 
 def main():
     #
-    if not os.path.isfile(args.face):  # 人脸
+    if not os.path.isfile(args.face):  # 人脸：./input/1.mp4
 
         raise ValueError('--face argument must be a valid path to video/image file')
 
@@ -324,7 +350,7 @@ def main():
 
         fps = video_stream.get(cv2.CAP_PROP_FPS)
 
-        print('Reading video frames...')
+        print('reading video frames...')
 
         full_frames = []
 
@@ -355,13 +381,13 @@ def main():
 
             full_frames.append(frame)
 
-    print("Number of frames available for inference: " + str(len(full_frames)))
+    print("number of frames available for inference: " + str(len(full_frames)))
 
     ##############################################################################
     # TODO：音频处理--预处理
     if not args.audio.endswith('.wav'):
         #
-        print('Extracting raw audio...')
+        print('extracting raw audio...')
 
         command = 'ffmpeg -y -i {} -strict -2 {}'.format(args.audio, 'temp/temp.wav')
 
@@ -377,9 +403,9 @@ def main():
 
     if np.isnan(mel.reshape(-1)).sum() > 0:
         #
-        raise ValueError('Mel contains nan! Using a TTS voice? Add a small epsilon noise to the wav file and try again')
+        raise ValueError('mel contains nan! using a tts voice? add a small epsilon noise to the wav file and try again')
 
-    mel_chunks = []  # 一个CHUNK对应一帧
+    mel_chunks = []  # 一个CHUNK对应一帧(一帧图片对应的音频MEL数据)
 
     mel_idx_multiplier = 80. / fps  # 3.2
 
@@ -399,15 +425,15 @@ def main():
 
         i += 1
 
-    print("Length of mel chunks: {}".format(len(mel_chunks)))  # list:182->{ndarray: (80, 16)}
+    print("length of mel chunks: {}".format(len(mel_chunks)))  # list:182->{ndarray: (80, 16)}
 
-    full_frames = full_frames[:len(mel_chunks)]
+    full_frames = full_frames[:len(mel_chunks)]  # 从视频中剪切目标音频对应时长的帧
 
     batch_size = args.wav2lip_batch_size  # 默认128帧作为一个批次
 
     gen = datagen(full_frames.copy(), mel_chunks)
 
-    for i, (img_batch, mel_batch, frames, coords) in enumerate(
+    for i, (faces, img_batch, mel_batch, frames, coords) in enumerate(
             tqdm(gen, total=int(np.ceil(float(len(mel_chunks)) / batch_size)))
     ):
 
@@ -415,13 +441,14 @@ def main():
             #
             model = load_model(args.checkpoint_path)
 
-            print("Model loaded")
+            print("model loaded")
 
-            frame_h, frame_w = full_frames[0].shape[:-1]  # ???
+            frame_h, frame_w = full_frames[0].shape[:-1]  # ???长宽
 
             out = cv2.VideoWriter('temp/result.avi', cv2.VideoWriter_fourcc(*'DIVX'), fps, (frame_w, frame_h))
 
         # {ndarray: (54, 96, 96, 6)}-->torch.Size([54, 6, 96, 96])
+
         img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
         mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
 
@@ -431,13 +458,27 @@ def main():
 
         pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.  # {ndarray: (128, 96, 96, 3)}
 
-        for p, f, c in zip(pred, frames, coords):
+        for o, p, f, c in zip(faces, pred, frames, coords):
             #
             y1, y2, x1, x2 = c
 
-            cv2.imwrite('temp/xxx.jpg', p)
+            # cv2.imwrite('temp/1.jpg', p)
 
-            p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
+            p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1), cv2.INTER_CUBIC)
+
+            # TODO 将预测得到的P与原始人脸进行比对以便解决边框问题
+            #
+            for i in range(0, o.shape[0]):
+
+                for j in range(0, o.shape[1]):
+                    #
+                    if abs(o[i][j][0] - 68) <= 7 and abs(o[i][j][1] - 169) <= 7 and (o[i][j][2] - 57) <= 7:
+                        #
+                        p[i][j][0] = 68
+                        p[i][j][1] = 169
+                        p[i][j][2] = 57
+
+            # cv2.imwrite('temp/2.jpg', p)
 
             f[y1:y2, x1:x2] = p
 
