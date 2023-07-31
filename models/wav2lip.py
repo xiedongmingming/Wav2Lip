@@ -14,7 +14,7 @@ class Wav2Lip(nn.Module):
 
         super(Wav2Lip, self).__init__()
 
-        self.face_encoder_blocks = nn.ModuleList([
+        self.faces_encoder_blocks = nn.ModuleList([
 
             nn.Sequential(Conv2d(6, 16, kernel_size=7, stride=1, padding=3)),  # 96,96
 
@@ -73,9 +73,11 @@ class Wav2Lip(nn.Module):
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
-            Conv2d(512, 512, kernel_size=1, stride=1, padding=0), )
+            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
 
-        self.face_decoder_blocks = nn.ModuleList([
+        )
+
+        self.faces_decoder_blocks = nn.ModuleList([
 
             nn.Sequential(Conv2d(512, 512, kernel_size=1, stride=1, padding=0), ),
 
@@ -122,26 +124,26 @@ class Wav2Lip(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, audio_sequences, face_sequences):
+    def forward(self, audio_sequences, faces_sequences):
         #
         # audio_sequences = (B, T, 1, 80, 16)
         #
         B = audio_sequences.size(0)
 
-        input_dim_size = len(face_sequences.size())
+        input_dim_size = len(faces_sequences.size())
 
         if input_dim_size > 4:
             #
             audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0)
-            face_sequences = torch.cat([face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0)
+            faces_sequences = torch.cat([faces_sequences[:, :, i] for i in range(faces_sequences.size(2))], dim=0)
 
         audio_embedding = self.audio_encoder(audio_sequences)  # B, 512, 1, 1
 
         feats = []
 
-        x = face_sequences
+        x = faces_sequences
 
-        for f in self.face_encoder_blocks:
+        for f in self.faces_encoder_blocks:
             #
             x = f(x)
 
@@ -149,7 +151,7 @@ class Wav2Lip(nn.Module):
 
         x = audio_embedding
 
-        for f in self.face_decoder_blocks:
+        for f in self.faces_decoder_blocks:
 
             x = f(x)
 
@@ -187,7 +189,7 @@ class Wav2Lip_disc_qual(nn.Module):
         #
         super(Wav2Lip_disc_qual, self).__init__()
 
-        self.face_encoder_blocks = nn.ModuleList([
+        self.faces_encoder_blocks = nn.ModuleList([
 
             nn.Sequential(
                 nonorm_Conv2d(3, 32, kernel_size=7, stride=1, padding=3)
@@ -229,26 +231,26 @@ class Wav2Lip_disc_qual(nn.Module):
 
         self.label_noise = .0
 
-    def get_lower_half(self, face_sequences):
+    def get_lower_half(self, faces_sequences):
         #
-        return face_sequences[:, :, face_sequences.size(2) // 2:]
+        return faces_sequences[:, :, faces_sequences.size(2) // 2:]
 
-    def to_2d(self, face_sequences):
+    def to_2d(self, faces_sequences):
 
-        B = face_sequences.size(0)
+        B = faces_sequences.size(0)
 
-        face_sequences = torch.cat([face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0)
+        faces_sequences = torch.cat([faces_sequences[:, :, i] for i in range(faces_sequences.size(2))], dim=0)
 
-        return face_sequences
+        return faces_sequences
 
-    def perceptual_forward(self, false_face_sequences):
+    def perceptual_forward(self, false_faces_sequences):
 
-        false_face_sequences = self.to_2d(false_face_sequences)
-        false_face_sequences = self.get_lower_half(false_face_sequences)
+        false_faces_sequences = self.to_2d(false_faces_sequences)
+        false_faces_sequences = self.get_lower_half(false_faces_sequences)
 
-        false_feats = false_face_sequences
+        false_feats = false_faces_sequences
 
-        for f in self.face_encoder_blocks:
+        for f in self.faces_encoder_blocks:
             #
             false_feats = f(false_feats)
 
@@ -259,15 +261,15 @@ class Wav2Lip_disc_qual(nn.Module):
 
         return false_pred_loss
 
-    def forward(self, face_sequences):
+    def forward(self, faces_sequences):
 
-        face_sequences = self.to_2d(face_sequences)
+        faces_sequences = self.to_2d(faces_sequences)
 
-        face_sequences = self.get_lower_half(face_sequences)
+        faces_sequences = self.get_lower_half(faces_sequences)
 
-        x = face_sequences
+        x = faces_sequences
 
-        for f in self.face_encoder_blocks:
+        for f in self.faces_encoder_blocks:
             #
             x = f(x)
 

@@ -239,7 +239,8 @@ class Dataset(object):
                 continue
 
             ########################################################################
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), right_img_name)  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(),
+                                                 right_img_name)  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
 
             if indiv_mels is None:
                 #
@@ -360,6 +361,13 @@ def train(
 
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             #
+            # x: {Tensor: (6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
+            # y: {Tensor: (3, 5, 96, 96)} -- 正样本
+            #
+            # mel: {Tensor: (1, 80, 16)} -- 正样本音频
+            #
+            # indiv_mels: {Tensor: (5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
+            #
             model.train()
 
             optimizer.zero_grad()
@@ -374,7 +382,7 @@ def train(
 
             gt = gt.to(device)
 
-            g = model(indiv_mels, x)
+            g = model(indiv_mels, x)  # 预测的样本输出
 
             if hparams.syncnet_wt > 0.:
                 sync_loss = get_sync_loss(mel, g)
