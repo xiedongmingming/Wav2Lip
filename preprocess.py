@@ -40,7 +40,7 @@ parser.add_argument(
 parser.add_argument(
     '--batch_size',
     help='Single GPU Face detection batch size',
-    default=128,
+    default=4,
     type=int
 )
 parser.add_argument(
@@ -85,7 +85,7 @@ def process_video_file(vfile, args, gpu_id):
 
     vidname = os.path.basename(vfile).rsplit('.', 1)[0] # 原始文件名
 
-    dirname = '\\'.join(vfile.split('\\')[-4:-1])
+    dirname = '\\'.join(vfile.split('\\')[-2:-1])
 
     fulldir = path.join(args.preprocessed_root, dirname, vidname)
 
@@ -125,7 +125,7 @@ def process_audio_file(vfile, args): # 央视视频和音频分开了
     #
     vidname = os.path.basename(vfile).rsplit('.', 1)[0]
 
-    dirname = '\\'.join(vfile.split('\\')[-4:-1])
+    dirname = '\\'.join(vfile.split('\\')[-2:-1])
 
     fulldir = path.join(args.preprocessed_root, dirname, vidname)
 
@@ -133,11 +133,11 @@ def process_audio_file(vfile, args): # 央视视频和音频分开了
 
     wavpath = path.join(fulldir, 'audio.wav')
 
-    shutil.copyfile(vfile.replace('video', 'audio').replace('.mp4', '.wav'), wavpath)
+    # shutil.copyfile(vfile.replace('video', 'audio').replace('.mp4', '.wav'), wavpath)
 
-    # command = template.format(vfile, wavpath)
-    #
-    # subprocess.call(command, shell=True)
+    command = template.format(vfile, wavpath)
+
+    subprocess.call(command, shell=True)
 
 def mp_handler(job):
     #
@@ -155,7 +155,7 @@ def main(args): # 102072
     #
     print('Started processing for {} with {} GPUs'.format(args.data_root, args.ngpu))
 
-    filelist = glob(path.join(args.data_root, '*/*/*.mp4'))
+    filelist = glob(path.join(args.data_root, '*/*.mp4'))
 
     jobs = [(vfile, args, i % args.ngpu) for i, vfile in enumerate(filelist)]
 

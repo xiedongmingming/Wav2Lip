@@ -239,8 +239,7 @@ class Dataset(object):
                 continue
 
             ########################################################################
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(),
-                                                 right_img_name)  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(), right_img_name)  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
 
             if indiv_mels is None:
                 #
@@ -278,18 +277,25 @@ class Dataset(object):
 
 def save_sample_images(x, g, gt, global_step, checkpoint_dir):
     #
+    # x: 正样本[下半部分空]+负样本
+    # g: {Tensor: (16, 3, 5, 96, 96)}
+    #
+    # gt: 正样本
+    #
     x = (x.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
-    g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
+    g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)  # 预测
 
     gt = (gt.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
 
-    refs, inps = x[..., 3:], x[..., :3]
+    refs, inps = x[..., 3:], x[..., :3]  # 负样本 正样本[下半部分空]
 
     folder = join(checkpoint_dir, "samples_step{:09d}".format(global_step))
 
-    if not os.path.exists(folder): os.mkdir(folder)
+    if not os.path.exists(folder):
+        #
+        os.mkdir(folder)
 
-    collage = np.concatenate((refs, inps, g, gt), axis=-2)
+    collage = np.concatenate((refs, inps, g, gt), axis=-2)  # 列合并
 
     for batch_idx, c in enumerate(collage):
 
@@ -371,10 +377,8 @@ def train(
             model.train()
 
             optimizer.zero_grad()
-            #
-            # Move data to CUDA device
-            #
-            x = x.to(device)
+
+            x = x.to(device)  # move data to cuda device
 
             mel = mel.to(device)
 
@@ -382,7 +386,12 @@ def train(
 
             gt = gt.to(device)
 
-            g = model(indiv_mels, x)  # 预测的样本输出
+            g = model(indiv_mels, x)  # 预测的样本输出 {Tensor: (16, 3, 5, 96, 96)}
+
+            # torch.cat([g[:, :, i] for i in range(g.size(2))], dim=3)
+
+            # cv2.imwrite('temp/ddd.jpg', np.transpose(g.cpu().detach().numpy(), (0, 2, 3, 4, 1))[0][0]*255)
+            # cv2.imwrite('temp/ddd.jpg', np.transpose(torch.cat([g[:, :, i] for i in range(g.size(2))], dim=3).cpu().detach().numpy(), (0, 2, 3, 1))[0]*255)
 
             if hparams.syncnet_wt > 0.:
                 sync_loss = get_sync_loss(mel, g)
@@ -450,7 +459,7 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
     #
     eval_steps = 700
 
-    print('Evaluating for {} steps'.format(eval_steps))
+    print('evaluating for {} steps'.format(eval_steps))
 
     sync_losses, recon_losses = [], []
 
@@ -464,8 +473,7 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
 
             model.eval()
 
-            # Move data to CUDA device
-            x = x.to(device)
+            x = x.to(device)  # move data to cuda device
 
             gt = gt.to(device)
 
@@ -509,7 +517,7 @@ def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
         "global_epoch": epoch,
     }, checkpoint_path)
 
-    print("Saved checkpoint:", checkpoint_path)
+    print("saved checkpoint:", checkpoint_path)
 
 
 def _load(checkpoint_path):
@@ -548,7 +556,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
 
         if optimizer_state is not None:
             #
-            print("Load optimizer state from {}".format(path))
+            print("load optimizer state from {}".format(path))
 
             optimizer.load_state_dict(checkpoint["optimizer"])
 

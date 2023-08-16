@@ -25,42 +25,47 @@ import os, random, cv2, argparse
 
 from hparams import hparams, get_image_list
 
-parser = argparse.ArgumentParser(description='Code to train the Wav2Lip model WITH the visual quality discriminator')
+##############################################################################
+parser = argparse.ArgumentParser(description='code to train the wav2Lip model with the visual quality discriminator')
 
 parser.add_argument(
     "--data_root",
-    help="Root folder of the preprocessed LRS2 dataset",
-    required=True,
-    type=str
+    help="root folder of the preprocessed lrs2 dataset",
+    # required=True, # TODO
+    type=str,
+    default="F:\datasets\lrs2_preprocessed"
 )
 parser.add_argument(
     '--checkpoint_dir',
-    help='Save checkpoints to this directory',
-    required=True,
-    type=str
+    help='save checkpoints to this directory',
+    # required=True, # TODO
+    type=str,
+    default="./checkpoints/hq_wav2lip/"
 )
 parser.add_argument(
     '--syncnet_checkpoint_path',
-    help='Load the pre-trained Expert discriminator',
-    required=True,
-    type=str
+    help='load the pre-trained expert discriminator',
+    # required=True, # TODO
+    type=str,
+    default="./checkpoints/syncnet/checkpoint_step000380000.pth"
 )
 parser.add_argument(
     '--checkpoint_path',
-    help='Resume generator from this checkpoint',
+    help='resume generator from this checkpoint',
     default=None,
     type=str
 )
 parser.add_argument(
     '--disc_checkpoint_path',
-    help='Resume quality disc from this checkpoint',
+    help='resume quality disc from this checkpoint',
     default=None,
     type=str
 )
 
 args = parser.parse_args()
 
-global_step = 0
+##############################################################################
+global_steps = 0
 global_epoch = 0
 
 use_cuda = torch.cuda.is_available()
@@ -71,6 +76,7 @@ syncnet_T = 5
 syncnet_mel_step_size = 16
 
 
+##############################################################################
 class Dataset(object):
 
     def __init__(self, split):
@@ -189,25 +195,23 @@ class Dataset(object):
                 #
                 continue
 
-            img_name = random.choice(img_names)
-
+            right_img_name = random.choice(img_names)
             wrong_img_name = random.choice(img_names)
 
-            while wrong_img_name == img_name:
+            while wrong_img_name == right_img_name:
                 #
                 wrong_img_name = random.choice(img_names)
 
-            window_fnames = self.get_window(img_name)
-
+            right_window_fnames = self.get_window(right_img_name)
             wrong_window_fnames = self.get_window(wrong_img_name)
 
-            if window_fnames is None or wrong_window_fnames is None:
+            if right_window_fnames is None or wrong_window_fnames is None:
                 #
                 continue
 
-            window = self.read_window(window_fnames)
+            right_window = self.read_window(right_window_fnames)
 
-            if window is None:
+            if right_window is None:
                 #
                 continue
 
@@ -229,25 +233,25 @@ class Dataset(object):
 
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)
+            mel = self.crop_audio_window(orig_mel.copy(), right_img_name)
 
-            if (mel.shape[0] != syncnet_mel_step_size):
+            if mel.shape[0] != syncnet_mel_step_size:
                 #
                 continue
 
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), img_name)
+            indiv_mels = self.get_segmented_mels(orig_mel.copy(), right_img_name)
 
             if indiv_mels is None: continue
 
-            window = self.prepare_window(window)
+            right_window = self.prepare_window(right_window)
 
-            y = window.copy()
+            y = right_window.copy()
 
-            window[:, :, window.shape[2] // 2:] = 0.
+            right_window[:, :, right_window.shape[2] // 2:] = 0.
 
             wrong_window = self.prepare_window(wrong_window)
 
-            x = np.concatenate([window, wrong_window], axis=0)
+            x = np.concatenate([right_window, wrong_window], axis=0)
 
             x = torch.FloatTensor(x)
 
@@ -260,7 +264,7 @@ class Dataset(object):
             return x, indiv_mels, mel, y
 
 
-def save_sample_images(x, g, gt, global_step, checkpoint_dir):
+def save_sample_images(x, g, gt, global_steps, checkpoint_dir):
     #
     x = (x.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
     g = (g.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
@@ -269,7 +273,7 @@ def save_sample_images(x, g, gt, global_step, checkpoint_dir):
 
     refs, inps = x[..., 3:], x[..., :3]
 
-    folder = join(checkpoint_dir, "samples_step{:09d}".format(global_step))
+    folder = join(checkpoint_dir, "samples_step{:09d}".format(global_steps))
 
     if not os.path.exists(folder): os.mkdir(folder)
 
@@ -296,9 +300,9 @@ def cosine_loss(a, v, y):
 
 device = torch.device("cuda" if use_cuda else "cpu")
 
-syncnet = SyncNet().to(device)
+syncnet_model = SyncNet().to(device)
 
-for p in syncnet.parameters():
+for p in syncnet_model.parameters():
     #
     p.requires_grad = False
 
@@ -313,7 +317,7 @@ def get_sync_loss(mel, g):
     #
     # B, 3 * T, H//2, W
     #
-    a, v = syncnet(mel, g)
+    a, v = syncnet_model(mel, g)
 
     y = torch.ones(g.size(0), 1).float().to(device)
 
@@ -322,20 +326,20 @@ def get_sync_loss(mel, g):
 
 def train(
         device,
-        model,
-        disc,
+        wav2_model,
+        disc_model,
         train_data_loader,
-        test_data_loader,
-        optimizer,
+        tests_data_loader,
+        wav2_optimizer,
         disc_optimizer,
         checkpoint_dir=None,
         checkpoint_interval=None,
         nepochs=None
 ):
     #
-    global global_step, global_epoch
+    global global_steps, global_epoch
 
-    resumed_step = global_step
+    resumed_step = global_steps
 
     while global_epoch < nepochs:
         #
@@ -349,9 +353,8 @@ def train(
 
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             #
-            disc.train()
-
-            model.train()
+            disc_model.train()
+            wav2_model.train()
 
             x = x.to(device)
 
@@ -361,13 +364,12 @@ def train(
 
             gt = gt.to(device)
             #
-            ### Train generator now. Remove ALL grads. 
+            # train generator now. remove all grads.
             #
-            optimizer.zero_grad()
-
+            wav2_optimizer.zero_grad()
             disc_optimizer.zero_grad()
 
-            g = model(indiv_mels, x)
+            g = wav2_model(indiv_mels, x)
 
             if hparams.syncnet_wt > 0.:
                 sync_loss = get_sync_loss(mel, g)
@@ -375,7 +377,7 @@ def train(
                 sync_loss = 0.
 
             if hparams.disc_wt > 0.:
-                perceptual_loss = disc.perceptual_forward(g)
+                perceptual_loss = disc_model.perceptual_forward(g)
             else:
                 perceptual_loss = 0.
 
@@ -387,17 +389,17 @@ def train(
 
             loss.backward()
 
-            optimizer.step()
+            wav2_optimizer.step()
 
-            ### Remove all gradients before Training disc
+            # remove all gradients before training disc
             disc_optimizer.zero_grad()
 
-            pred = disc(gt)
+            pred = disc_model(gt)
 
             disc_real_loss = F.binary_cross_entropy(pred, torch.ones((len(pred), 1)).to(device))
             disc_real_loss.backward()
 
-            pred = disc(g.detach())
+            pred = disc_model(g.detach())
 
             disc_fake_loss = F.binary_cross_entropy(pred, torch.zeros((len(pred), 1)).to(device))
             disc_fake_loss.backward()
@@ -407,14 +409,14 @@ def train(
             running_disc_real_loss += disc_real_loss.item()
             running_disc_fake_loss += disc_fake_loss.item()
 
-            if global_step % checkpoint_interval == 0:
+            if global_steps % checkpoint_interval == 0:
                 #
-                save_sample_images(x, g, gt, global_step, checkpoint_dir)
+                save_sample_images(x, g, gt, global_steps, checkpoint_dir)
 
             # Logs
-            global_step += 1
+            global_steps += 1
 
-            cur_session_steps = global_step - resumed_step
+            cur_session_steps = global_steps - resumed_step
 
             running_l1_loss += l1loss.item()
 
@@ -428,19 +430,36 @@ def train(
             else:
                 running_perceptual_loss += 0.
 
-            if global_step == 1 or global_step % checkpoint_interval == 0:
+            if global_steps == 1 or global_steps % checkpoint_interval == 0:
                 #
                 save_checkpoint(
-                    model, optimizer, global_step, checkpoint_dir, global_epoch
+                    wav2_model,
+                    wav2_optimizer,
+                    global_steps,
+                    checkpoint_dir,
+                    global_epoch
                 )
 
-                save_checkpoint(disc, disc_optimizer, global_step, checkpoint_dir, global_epoch, prefix='disc_')
+                save_checkpoint(
+                    disc_model,
+                    disc_optimizer,
+                    global_steps,
+                    checkpoint_dir,
+                    global_epoch,
+                    prefix='disc_'
+                )
 
-            if global_step % hparams.eval_interval == 0:
+            if global_steps % hparams.eval_interval == 0:
                 #
                 with torch.no_grad():
 
-                    average_sync_loss = eval_model(test_data_loader, global_step, device, model, disc)
+                    average_sync_loss = eval_model(
+                        tests_data_loader,
+                        global_steps,
+                        device,
+                        wav2_model,
+                        disc_model
+                    )
 
                     if average_sync_loss < .75:
                         #
@@ -458,7 +477,7 @@ def train(
         global_epoch += 1
 
 
-def eval_model(test_data_loader, global_step, device, model, disc):
+def eval_model(test_data_loader, global_steps, device, model, disc):
     #
     eval_steps = 300
 
@@ -529,10 +548,10 @@ def eval_model(test_data_loader, global_step, device, model, disc):
         return sum(running_sync_loss) / len(running_sync_loss)
 
 
-def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch, prefix=''):
+def save_checkpoint(model, optimizer, steps, checkpoint_dir, epoch, prefix=''):
     #
     checkpoint_path = join(
-        checkpoint_dir, "{}checkpoint_step{:09d}.pth".format(prefix, global_step)
+        checkpoint_dir, "{}checkpoint_step{:09d}.pth".format(prefix, global_steps)
     )
 
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
@@ -540,7 +559,7 @@ def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch, prefix=''):
     torch.save({
         "state_dict": model.state_dict(),
         "optimizer": optimizer_state,
-        "global_step": step,
+        "global_steps": steps,
         "global_epoch": epoch,
     }, checkpoint_path)
 
@@ -559,7 +578,7 @@ def _load(checkpoint_path):
 
 def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_global_states=True):
     #
-    global global_step
+    global global_steps
     global global_epoch
 
     print("Load checkpoint from: {}".format(path))
@@ -588,7 +607,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
 
     if overwrite_global_states:
         #
-        global_step = checkpoint["global_step"]
+        global_steps = checkpoint["global_steps"]
         global_epoch = checkpoint["global_epoch"]
 
     return model
@@ -599,75 +618,87 @@ if __name__ == "__main__":
     checkpoint_dir = args.checkpoint_dir
 
     #
-    # Dataset and Dataloader setup
+    # dataset and dataloader setup
     #
     train_dataset = Dataset('train')
-
-    test_dataset = Dataset('val')
+    tests_dataset = Dataset('val')
 
     train_data_loader = data_utils.DataLoader(
         train_dataset,
         batch_size=hparams.batch_size,
         shuffle=True,
-        num_workers=hparams.num_workers
+        num_workers=1,  # hparams.num_workers
     )
-
-    test_data_loader = data_utils.DataLoader(
-        test_dataset,
+    tests_data_loader = data_utils.DataLoader(
+        tests_dataset,
         batch_size=hparams.batch_size,
-        num_workers=4
+        # shuffle=True,
+        num_workers=1,  # 4
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    # Model
-    model = Wav2Lip().to(device)
+    # model
+    wav2_model = Wav2Lip().to(device)
+    disc_model = Wav2Lip_disc_qual().to(device)
 
-    disc = Wav2Lip_disc_qual().to(device)
+    print('total trainable params: wav2lip {}'.format(
+        sum(p.numel() for p in wav2_model.parameters() if p.requires_grad)
+    ))
+    print('total trainable params: wavdisc {}'.format(
+        sum(p.numel() for p in disc_model.parameters() if p.requires_grad)
+    ))
 
-    print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
-    print('total DISC trainable params {}'.format(sum(p.numel() for p in disc.parameters() if p.requires_grad)))
-
-    optimizer = optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
+    wav2_optimizer = optim.Adam(
+        [p for p in wav2_model.parameters() if p.requires_grad],
         lr=hparams.initial_learning_rate,
         betas=(0.5, 0.999)
     )
-
     disc_optimizer = optim.Adam(
-        [p for p in disc.parameters() if p.requires_grad],
+        [p for p in disc_model.parameters() if p.requires_grad],
         lr=hparams.disc_initial_learning_rate,
         betas=(0.5, 0.999)
     )
 
     if args.checkpoint_path is not None:
         #
-        load_checkpoint(args.checkpoint_path, model, optimizer, reset_optimizer=False)
+        load_checkpoint(
+            args.checkpoint_path,
+            wav2_model,
+            wav2_optimizer,
+            reset_optimizer=False
+        )
 
     if args.disc_checkpoint_path is not None:
         #
         load_checkpoint(
             args.disc_checkpoint_path,
-            disc,
+            disc_model,
             disc_optimizer,
             reset_optimizer=False,
             overwrite_global_states=False
         )
 
-    load_checkpoint(args.syncnet_checkpoint_path, syncnet, None, reset_optimizer=True, overwrite_global_states=False)
+    load_checkpoint(
+        args.syncnet_checkpoint_path,
+        syncnet_model,
+        None,
+        reset_optimizer=True,
+        overwrite_global_states=False
+    )
 
     if not os.path.exists(checkpoint_dir):
         #
         os.mkdir(checkpoint_dir)
 
-    # Train!
+    # train!
     train(
         device,
-        model,
-        disc,
+        wav2_model,
+        disc_model,
         train_data_loader,
-        test_data_loader,
-        optimizer,
+        tests_data_loader,
+        wav2_optimizer,
         disc_optimizer,
         checkpoint_dir=checkpoint_dir,
         checkpoint_interval=hparams.checkpoint_interval,

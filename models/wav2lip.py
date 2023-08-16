@@ -14,7 +14,7 @@ class Wav2Lip(nn.Module):
 
         super(Wav2Lip, self).__init__()
 
-        self.faces_encoder_blocks = nn.ModuleList([
+        self.face_encoder_blocks = nn.ModuleList([
 
             nn.Sequential(Conv2d(6, 16, kernel_size=7, stride=1, padding=3)),  # 96,96
 
@@ -77,7 +77,7 @@ class Wav2Lip(nn.Module):
 
         )
 
-        self.faces_decoder_blocks = nn.ModuleList([
+        self.face_decoder_blocks = nn.ModuleList([
 
             nn.Sequential(Conv2d(512, 512, kernel_size=1, stride=1, padding=0), ),
 
@@ -126,16 +126,16 @@ class Wav2Lip(nn.Module):
 
     def forward(self, audio_sequences, faces_sequences):
         #
-        # audio_sequences = (B, T, 1, 80, 16)
-        #
-        B = audio_sequences.size(0)
+        # audio_sequences = (B, T, 1, 80, 16)  B：BATCH_SIZE T：[-1:4]音频数据：{Tensor: (16, 5, 1, 80, 16)}
+        # faces_sequences = (B, F, 5, 96, 96)  B：BATCH_SIZE F：正样本[下半部分空]+负样本：{Tensor: (16, 6, 5, 96, 96)}
+        B = audio_sequences.size(0) # BATCHSIZE
 
-        input_dim_size = len(faces_sequences.size())
+        input_dim_size = len(faces_sequences.size()) # torch.Size([16, 6, 5, 96, 96])
 
         if input_dim_size > 4:
             #
-            audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0)
-            faces_sequences = torch.cat([faces_sequences[:, :, i] for i in range(faces_sequences.size(2))], dim=0)
+            audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0) # {Tensor: (80, 1, 80, 16)} 按第二个维度合并
+            faces_sequences = torch.cat([faces_sequences[:, :, i] for i in range(faces_sequences.size(2))], dim=0) # {Tensor: (80, 6, 96, 96)}# 按第三个维度合并
 
         audio_embedding = self.audio_encoder(audio_sequences)  # B, 512, 1, 1
 
@@ -143,7 +143,7 @@ class Wav2Lip(nn.Module):
 
         x = faces_sequences
 
-        for f in self.faces_encoder_blocks:
+        for f in self.face_encoder_blocks:
             #
             x = f(x)
 
@@ -151,7 +151,7 @@ class Wav2Lip(nn.Module):
 
         x = audio_embedding
 
-        for f in self.faces_decoder_blocks:
+        for f in self.face_decoder_blocks:
 
             x = f(x)
 
@@ -180,7 +180,7 @@ class Wav2Lip(nn.Module):
 
             outputs = x
 
-        return outputs
+        return outputs # {Tensor: (16, 3, 5, 96, 96)}
 
 
 class Wav2Lip_disc_qual(nn.Module):
