@@ -33,32 +33,32 @@ parser.add_argument(
     help="root folder of the preprocessed lrs2 dataset",
     # required=True, # TODO
     type=str,
-    default="F:\datasets\lrs2_preprocessed"
+    default="F:\datasets\lrs2\lrs2_preprocessed"  # TODO
 )
 parser.add_argument(
     '--checkpoint_dir',
     help='save checkpoints to this directory',
     # required=True, # TODO
     type=str,
-    default="./checkpoints/hq_wav2lip/"
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip"  # TODO
 )
 parser.add_argument(
     '--syncnet_checkpoint_path',
     help='load the pre-trained expert discriminator',
     # required=True, # TODO
     type=str,
-    default="./checkpoints/syncnet/checkpoint_step000380000.pth"
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_syncnet\checkpoint_step000380000.pth"  # TODO
 )
 parser.add_argument(
     '--checkpoint_path',
     help='resume generator from this checkpoint',
-    default=None,
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip\checkpoint_step000165000.pth",  # TODO
     type=str
 )
 parser.add_argument(
     '--disc_checkpoint_path',
     help='resume quality disc from this checkpoint',
-    default=None,
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip\disc_checkpoint_step000165000.pth",  # TODO
     type=str
 )
 
@@ -241,7 +241,9 @@ class Dataset(object):
 
             indiv_mels = self.get_segmented_mels(orig_mel.copy(), right_img_name)
 
-            if indiv_mels is None: continue
+            if indiv_mels is None:
+                #
+                continue
 
             right_window = self.prepare_window(right_window)
 
@@ -260,10 +262,18 @@ class Dataset(object):
             indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)
 
             y = torch.FloatTensor(y)
-
+            #
+            # x: {Tensor: (6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
+            # y: {Tensor: (3, 5, 96, 96)} -- 正样本
+            #
+            # mel: {Tensor: (1, 80, 16)} -- 正样本音频
+            #
+            # indiv_mels: {Tensor: (5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
+            #
             return x, indiv_mels, mel, y
 
 
+##############################################################################
 def save_sample_images(x, g, gt, global_steps, checkpoint_dir):
     #
     x = (x.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
@@ -286,6 +296,7 @@ def save_sample_images(x, g, gt, global_steps, checkpoint_dir):
             cv2.imwrite('{}/{}_{}.jpg'.format(folder, batch_idx, t), c[t])
 
 
+##############################################################################
 logloss = nn.BCELoss()
 
 
@@ -298,6 +309,7 @@ def cosine_loss(a, v, y):
     return loss
 
 
+##############################################################################
 device = torch.device("cuda" if use_cuda else "cpu")
 
 syncnet_model = SyncNet().to(device)
@@ -353,6 +365,13 @@ def train(
 
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             #
+            # x: {Tensor: (N, 6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
+            # y: {Tensor: (N, 3, 5, 96, 96)} -- 正样本
+            #
+            # mel: {Tensor: (N, 1, 80, 16)} -- 正样本音频
+            #
+            # indiv_mels: {Tensor: (N, 5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
+            #
             disc_model.train()
             wav2_model.train()
 
@@ -394,12 +413,12 @@ def train(
             # remove all gradients before training disc
             disc_optimizer.zero_grad()
 
-            pred = disc_model(gt)
+            pred = disc_model(gt)  # 真实值
 
             disc_real_loss = F.binary_cross_entropy(pred, torch.ones((len(pred), 1)).to(device))
             disc_real_loss.backward()
 
-            pred = disc_model(g.detach())
+            pred = disc_model(g.detach())  # 预测值
 
             disc_fake_loss = F.binary_cross_entropy(pred, torch.zeros((len(pred), 1)).to(device))
             disc_fake_loss.backward()
@@ -471,8 +490,7 @@ def train(
                 running_perceptual_loss / (step + 1),
                 running_disc_fake_loss / (step + 1),
                 running_disc_real_loss / (step + 1)
-            )
-            )
+            ))
 
         global_epoch += 1
 

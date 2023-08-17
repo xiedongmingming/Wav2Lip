@@ -264,14 +264,14 @@ class Dataset(object):
             indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)  # 附近[-1:4]帧对应的MEL值
 
             y = torch.FloatTensor(y)  # y: {Tensor: (3, 5, 96, 96)}
-
+            #
             # x: {Tensor: (6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
             # y: {Tensor: (3, 5, 96, 96)} -- 正样本
-
+            #
             # mel: {Tensor: (1, 80, 16)} -- 正样本音频
-
+            #
             # indiv_mels: {Tensor: (5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
-
+            #
             return x, indiv_mels, mel, y
 
 
@@ -367,12 +367,12 @@ def train(
 
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             #
-            # x: {Tensor: (6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
-            # y: {Tensor: (3, 5, 96, 96)} -- 正样本
+            # x: {Tensor: (N, 6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
+            # y: {Tensor: (N, 3, 5, 96, 96)} -- 正样本
             #
-            # mel: {Tensor: (1, 80, 16)} -- 正样本音频
+            # mel: {Tensor: (N, 1, 80, 16)} -- 正样本音频
             #
-            # indiv_mels: {Tensor: (5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
+            # indiv_mels: {Tensor: (N, 5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
             #
             model.train()
 
