@@ -11,53 +11,61 @@ class SyncNet_color(nn.Module):
         #
         super(SyncNet_color, self).__init__()
 
-        self.face_encoder = nn.Sequential(
+        self.face_encoder = nn.Sequential(  # {Tensor: (N, 15, 48, 96)}
 
-            Conv2d(15, 32, kernel_size=(7, 7), stride=1, padding=3),
+            Conv2d(15, 32, kernel_size=(7, 7), stride=1, padding=3),  # 表示输入15个通道输出32个通道
 
             Conv2d(32, 64, kernel_size=5, stride=(1, 2), padding=1),
+
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
+
             Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
             Conv2d(512, 512, kernel_size=3, stride=1, padding=0),
-            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),  # {Tensor: (N, 512, 1, 1)}
 
         )
 
-        self.audio_encoder = nn.Sequential(
+        self.audio_encoder = nn.Sequential(  # audio_sequences: {Tensor: (N, 1, 80, 16)}
 
             Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+
             Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(32, 64, kernel_size=3, stride=(3, 1), padding=1),
+
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(64, 128, kernel_size=3, stride=3, padding=1),
+
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(128, 256, kernel_size=3, stride=(3, 2), padding=1),
+
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
             Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
 
             Conv2d(256, 512, kernel_size=3, stride=1, padding=0),
-            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+            Conv2d(512, 512, kernel_size=1, stride=1, padding=0),  # {Tensor: (N, 512, 1, 1)}
 
         )
 

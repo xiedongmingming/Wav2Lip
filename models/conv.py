@@ -11,7 +11,13 @@ class Conv2d(nn.Module):
         super().__init__(*args, **kwargs)
 
         self.conv_block = nn.Sequential(
-            nn.Conv2d(cin, cout, kernel_size, stride, padding),
+            nn.Conv2d(
+                cin,
+                cout,
+                kernel_size,
+                stride,
+                padding
+            ),
             nn.BatchNorm2d(cout)
         )
 
@@ -37,7 +43,13 @@ class nonorm_Conv2d(nn.Module):
         super().__init__(*args, **kwargs)
 
         self.conv_block = nn.Sequential(
-            nn.Conv2d(cin, cout, kernel_size, stride, padding),
+            nn.Conv2d(
+                cin,
+                cout,
+                kernel_size,
+                stride,
+                padding
+            ),
         )
 
         self.act = nn.LeakyReLU(0.01, inplace=True)
@@ -56,7 +68,14 @@ class Conv2dTranspose(nn.Module):
         super().__init__(*args, **kwargs)
 
         self.conv_block = nn.Sequential(
-            nn.ConvTranspose2d(cin, cout, kernel_size, stride, padding, output_padding),
+            nn.ConvTranspose2d(
+                cin,
+                cout,
+                kernel_size,
+                stride,
+                padding,
+                output_padding
+            ),
             nn.BatchNorm2d(cout)
         )
 

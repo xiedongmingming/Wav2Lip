@@ -24,35 +24,41 @@ import os, random, cv2, argparse
 
 from hparams import hparams, get_image_list
 
-parser = argparse.ArgumentParser(description='Code to train the Wav2Lip model without the visual quality discriminator')
+####################################################################################
+parser = argparse.ArgumentParser(description='code to train the wav2lip model without the visual quality discriminator')
 
 parser.add_argument(
     "--data_root",
-    help="Root folder of the preprocessed LRS2 dataset",
-    required=True,
-    type=str
+    help="root folder of the preprocessed lrs2 dataset",
+    # required=True, # TODO
+    type=str,
+    default="F:\datasets\lrs2\lrs2_preprocessed"  # TODO
 )
 parser.add_argument(
     '--checkpoint_dir',
-    help='Save checkpoints to this directory',
-    required=True,
-    type=str
+    help='save checkpoints to this directory',
+    # required=True, # TODO
+    type=str,
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_wav2lip"  # TODO
 )
 parser.add_argument(
     '--syncnet_checkpoint_path',
-    help='Load the pre-trained Expert discriminator',
-    required=True,
-    type=str
+    help='load the pre-trained expert discriminator',
+    # required=True, # TODO
+    type=str,
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_syncnet\checkpoint_step000382000.pth",  # TODO
 )
 parser.add_argument(
     '--checkpoint_path',
-    help='Resume from this checkpoint',
-    default=None,
-    type=str
+    help='resume from this checkpoint',
+    # default=None, # TODO
+    type=str,
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_wav2lip\checkpoint_step000762000.pth"  # TODO
 )
 
 args = parser.parse_args()
 
+####################################################################################
 global_steps = 0
 global_epoch = 0
 
@@ -64,6 +70,7 @@ syncnet_T = 5
 syncnet_mel_step_size = 16
 
 
+####################################################################################
 class Dataset(object):
 
     def __init__(self, split):
@@ -232,14 +239,17 @@ class Dataset(object):
 
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), right_img_name)  # {ndarray: (16, 80)}：针对正样本图片200MS区间内的MEL频谱数据
+            m = self.crop_audio_window(orig_mel.copy(), right_img_name)  # {ndarray: (16, 80)}：针对正样本图片200MS区间内的MEL频谱数据
 
-            if mel.shape[0] != syncnet_mel_step_size:
+            if m.shape[0] != syncnet_mel_step_size:
                 #
                 continue
 
             ########################################################################
-            indiv_mels = self.get_segmented_mels(orig_mel.copy(), right_img_name)  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
+            indiv_mels = self.get_segmented_mels(
+                orig_mel.copy(),
+                right_img_name
+            )  # {ndarray: (5, 80, 16)}？？？当前图片前一帧图片对应的音频
 
             if indiv_mels is None:
                 #
@@ -259,7 +269,7 @@ class Dataset(object):
 
             x = torch.FloatTensor(x)
 
-            mel = torch.FloatTensor(mel.T).unsqueeze(0)  # {Tensor: (1, 80, 16)}
+            m = torch.FloatTensor(m.T).unsqueeze(0)  # {Tensor: (1, 80, 16)}
 
             indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)  # 附近[-1:4]帧对应的MEL值
 
@@ -268,11 +278,11 @@ class Dataset(object):
             # x: {Tensor: (6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
             # y: {Tensor: (3, 5, 96, 96)} -- 正样本
             #
-            # mel: {Tensor: (1, 80, 16)} -- 正样本音频
+            # m: {Tensor: (1, 80, 16)} -- 正样本音频
             #
             # indiv_mels: {Tensor: (5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
             #
-            return x, indiv_mels, mel, y
+            return x, indiv_mels, m, y
 
 
 def save_sample_images(x, g, gt, global_step, checkpoint_dir):
@@ -304,6 +314,7 @@ def save_sample_images(x, g, gt, global_step, checkpoint_dir):
             cv2.imwrite('{}/{}_{}.jpg'.format(folder, batch_idx, t), c[t])
 
 
+####################################################################################
 logloss = nn.BCELoss()
 
 
@@ -342,6 +353,7 @@ def get_sync_loss(mel, g):
     return cosine_loss(a, v, y)
 
 
+####################################################################################
 def train(
         device,
         model,
@@ -355,7 +367,7 @@ def train(
     #
     global global_steps, global_epoch
 
-    resumed_step = global_step
+    resumed_steps = global_steps
 
     while global_epoch < nepochs:
         #
@@ -365,12 +377,12 @@ def train(
 
         prog_bar = tqdm(enumerate(train_data_loader))
 
-        for step, (x, indiv_mels, mel, gt) in prog_bar:
+        for step, (x, indiv_mels, m, y) in prog_bar:
             #
             # x: {Tensor: (N, 6, 5, 96, 96)} -- 正样本[下半部分空]+负样本
             # y: {Tensor: (N, 3, 5, 96, 96)} -- 正样本
             #
-            # mel: {Tensor: (N, 1, 80, 16)} -- 正样本音频
+            # m: {Tensor: (N, 1, 80, 16)} -- 正样本音频
             #
             # indiv_mels: {Tensor: (N, 5, 1, 80, 16)} -- 正样本[-1:4]音频(共5个)
             #
@@ -380,13 +392,13 @@ def train(
 
             x = x.to(device)  # move data to cuda device
 
-            mel = mel.to(device)
+            m = m.to(device)
 
             indiv_mels = indiv_mels.to(device)
 
-            gt = gt.to(device)
+            y = y.to(device)
 
-            g = model(indiv_mels, x)  # 预测的样本输出 {Tensor: (16, 3, 5, 96, 96)}
+            g = model(indiv_mels, x)  # 预测的样本输出 {Tensor: (N, 3, 5, 96, 96)}
 
             # torch.cat([g[:, :, i] for i in range(g.size(2))], dim=3)
 
@@ -394,11 +406,11 @@ def train(
             # cv2.imwrite('temp/ddd.jpg', np.transpose(torch.cat([g[:, :, i] for i in range(g.size(2))], dim=3).cpu().detach().numpy(), (0, 2, 3, 1))[0]*255)
 
             if hparams.syncnet_wt > 0.:
-                sync_loss = get_sync_loss(mel, g)
+                sync_loss = get_sync_loss(m, g)
             else:
                 sync_loss = 0.
 
-            l1loss = recon_loss(g, gt)
+            l1loss = recon_loss(g, y)
 
             loss = hparams.syncnet_wt * sync_loss + (1 - hparams.syncnet_wt) * l1loss
 
@@ -406,13 +418,13 @@ def train(
 
             optimizer.step()
 
-            if global_step % checkpoint_interval == 0:
+            if global_steps % checkpoint_interval == 0:
                 #
-                save_sample_images(x, g, gt, global_step, checkpoint_dir)
+                save_sample_images(x, g, y, global_steps, checkpoint_dir)
 
-            global_step += 1
+            global_steps += 1
 
-            cur_session_steps = global_step - resumed_step
+            cur_session_steps = global_steps - resumed_steps
 
             running_l1_loss += l1loss.item()
 
@@ -421,23 +433,23 @@ def train(
             else:
                 running_sync_loss += 0.
 
-            if global_step == 1 or global_step % checkpoint_interval == 0:
+            if global_steps == 1 or global_steps % checkpoint_interval == 0:
                 #
                 save_checkpoint(
                     model,
                     optimizer,
-                    global_step,
+                    global_steps,
                     checkpoint_dir,
                     global_epoch
                 )
 
-            if global_step == 1 or global_step % hparams.eval_interval == 0:
+            if global_steps == 1 or global_steps % hparams.eval_interval == 0:
 
                 with torch.no_grad():
 
                     average_sync_loss = eval_model(
                         tests_data_loader,
-                        global_step,
+                        global_steps,
                         device,
                         model,
                         checkpoint_dir
@@ -533,10 +545,9 @@ def _load(checkpoint_path):
 def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_global_states=True):
     #
     global global_steps
-
     global global_epoch
 
-    print("Load checkpoint from: {}".format(path))
+    print("load checkpoint from: {}".format(path))
 
     checkpoint = _load(path)
 
@@ -562,14 +573,15 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
 
     if overwrite_global_states:
         #
-        global_step = checkpoint["global_step"]
-
+        global_steps = checkpoint["global_step"]
         global_epoch = checkpoint["global_epoch"]
 
     return model
 
 
+#
 # !python wav2lip_train.py --data_root F:\datasets\lrs2_preprocessed --checkpoint_dir ./checkpoints/ --syncnet_checkpoint_path F:\datasets\syncnet_checkpoints\checkpoint_step000211000.pth
+#
 if __name__ == "__main__":
     #
     checkpoint_dir = args.checkpoint_dir
@@ -584,36 +596,47 @@ if __name__ == "__main__":
         train_dataset,
         batch_size=hparams.batch_size,
         shuffle=True,
-        num_workers=hparams.num_workers,
+        num_workers=1,  # hparams.num_workers,
     )
 
     tests_data_loader = data_utils.DataLoader(
         tests_dataset,
         batch_size=hparams.batch_size,
         # shuffle=False,
-        num_workers=4,
+        num_workers=1,  # 4,
     )
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    # Model
     model = Wav2Lip().to(device)
 
-    print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    print('total trainable params: wav2lip {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
-    optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad], lr=hparams.initial_learning_rate)
+    optimizer = optim.Adam(
+        [p for p in model.parameters() if p.requires_grad], lr=hparams.initial_learning_rate
+    )
 
     if args.checkpoint_path is not None:
         #
-        load_checkpoint(args.checkpoint_path, model, optimizer, reset_optimizer=False)
+        load_checkpoint(
+            args.checkpoint_path,
+            model,
+            optimizer,
+            reset_optimizer=False
+        )
 
-    load_checkpoint(args.syncnet_checkpoint_path, syncnet, None, reset_optimizer=True, overwrite_global_states=False)
+    load_checkpoint(
+        args.syncnet_checkpoint_path,
+        syncnet,
+        None,
+        reset_optimizer=True,
+        overwrite_global_states=False
+    )
 
     if not os.path.exists(checkpoint_dir):
         #
         os.mkdir(checkpoint_dir)
 
-    # Train!
     train(
         device,
         model,
