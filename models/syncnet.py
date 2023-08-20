@@ -61,22 +61,18 @@ class SyncNet_color(nn.Module):
 
         )
 
-    def forward(self, audio_sequences, face_sequences):  # audio_sequences := (B, dim, T)
+    def forward(self, audio_sequences, faces_sequences):  # audio_sequences := (B, dim, T)
         #
-        # audio_sequences: {Tensor: (128, 1, 80, 16)}
+        # audio_sequences: {Tensor: (N, 1, 80, 16)}
+        # faces_sequences: {Tensor: (N, 15, 48, 96)}
         #
-        # face_sequences: {Tensor: (128, 15, 48, 96)}
-        #
-        face_embedding = self.face_encoder(face_sequences)
+        audio_embedding = self.audio_encoder(audio_sequences)  # {Tensor: (N, 512, 1, 1)}
+        faces_embedding = self.face_encoder(faces_sequences)  # {Tensor: (N, 512, 1, 1)}
 
-        audio_embedding = self.audio_encoder(audio_sequences)
+        audio_embedding = audio_embedding.view(audio_embedding.size(0), -1)  # {Tensor: (N, 512)}
+        faces_embedding = faces_embedding.view(faces_embedding.size(0), -1)  # {Tensor: (N, 512)}
 
-        audio_embedding = audio_embedding.view(audio_embedding.size(0), -1)
+        audio_embedding = F.normalize(audio_embedding, p=2, dim=1)  # {Tensor: (N, 512)}
+        faces_embedding = F.normalize(faces_embedding, p=2, dim=1)  # {Tensor: (N, 512)}
 
-        face_embedding = face_embedding.view(face_embedding.size(0), -1)
-
-        audio_embedding = F.normalize(audio_embedding, p=2, dim=1)
-
-        face_embedding = F.normalize(face_embedding, p=2, dim=1)
-
-        return audio_embedding, face_embedding
+        return audio_embedding, faces_embedding

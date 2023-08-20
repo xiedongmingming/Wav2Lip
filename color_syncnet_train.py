@@ -23,29 +23,33 @@ import os, random, cv2, argparse
 
 from hparams import hparams, get_image_list
 
-parser = argparse.ArgumentParser(description='Code to train the expert lip-sync discriminator')
+##################################################################################################
+parser = argparse.ArgumentParser(description='code to train the expert lip-sync discriminator')
 
 parser.add_argument(
     "--data_root",
-    help="Root folder of the preprocessed LRS2 dataset",
-    required=True
+    help="root folder of the preprocessed lrs2 dataset",
+    # required=True # TODO
+    default="F:\datasets\lrs2\lrs2_preprocessed"  # TODO
 )
 parser.add_argument(
     '--checkpoint_dir',
-    help='Save checkpoints to this directory',
-    required=True,
-    type=str
+    help='save checkpoints to this directory',
+    # required=True, # TODO
+    type=str,
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_syncnet"  # TODO
 )
 parser.add_argument(
     '--checkpoint_path',
-    help='Resumed from this checkpoint',
-    default=None,
+    help='resumed from this checkpoint',
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_syncnet\checkpoint_step000380000.pth",  # TODO
     type=str
 )
 
 args = parser.parse_args()
 
-global_step = 0  # 历史总STEP
+##################################################################################################
+global_steps = 0  # 历史总STEP
 global_epoch = 0  # 历史总EPOCH
 
 use_cuda = torch.cuda.is_available()  # 训练的设备CPU或GPU
@@ -56,13 +60,14 @@ syncnet_T = 5  # 每次选取200MS的视频片段进行训练，视频的FPS为2
 syncnet_mel_step_size = 16  # 200MS对应的声音的MEL-SPECTROGRAM特征的长度为16.
 
 
+##################################################################################################
 class Dataset(object):
     #
     def __init__(self, split):
 
         self.all_videos = get_image_list(args.data_root, split)
 
-    def get_frame_id(self, frame):  # f:/workspace/archive/lrs2_preprocessed/6234169082415778641/00029/22.jpg
+    def get_frame_id(self, frame):
         #
         return int(basename(frame).split('.')[0])  # 视频帧索引编号
 
@@ -121,25 +126,24 @@ class Dataset(object):
                 #
                 continue
 
-            img_name = random.choice(img_names)  # 随机选一个正样本（图片名称）
-
+            right_img_name = random.choice(img_names)  # 随机选一个正样本（图片名称）
             wrong_img_name = random.choice(img_names)  # 随机选一个负样本（图片名称）
 
-            while wrong_img_name == img_name:
+            while wrong_img_name == right_img_name:
                 #
                 wrong_img_name = random.choice(img_names)
 
             if random.choice([True, False]):  # 随机决定是产生负样本还是正样本
 
-                y = torch.ones(1).float()  # 标签
+                y = torch.ones(1).float()  # 正标签
 
-                chosen = img_name  # 输入
+                chosen = right_img_name  # 输入1
 
             else:
 
-                y = torch.zeros(1).float()
+                y = torch.zeros(1).float()  # 负标签
 
-                chosen = wrong_img_name
+                chosen = wrong_img_name  # 输入1
 
             window_fnames = self.get_window(chosen)  # 目标图片对应位置200MS内的所有帧名称
 
@@ -175,7 +179,9 @@ class Dataset(object):
 
                 window.append(img)
 
-            if not all_read: continue
+            if not all_read:
+                #
+                continue
 
             try:
 
@@ -191,32 +197,33 @@ class Dataset(object):
 
                 continue
 
-            mel = self.crop_audio_window(orig_mel.copy(), img_name)  # {ndarray: (16, 80)}：针对正样本图片200MS区间内的MEL频谱数据
+            m = self.crop_audio_window(orig_mel.copy(), right_img_name)  # {ndarray: (16, 80)}：针对正样本图片200MS区间内的MEL频谱数据
 
-            if mel.shape[0] != syncnet_mel_step_size:
+            if m.shape[0] != syncnet_mel_step_size:
                 #
                 continue
             #
             # H x W x 3 * T
             #
-            x = np.concatenate(window, axis=2) / 255.  # {ndarray: (96, 96, 15)}：200MS内的图片数据合并
+            x = np.concatenate(window, axis=2) / 255.  # {ndarray: (96, 96, 15)}：200MS内的5张图片数据合并
 
             x = x.transpose(2, 0, 1)  # 转置：(15像素值，长，宽)
 
-            x = x[:, x.shape[1] // 2:]  # 下半部分
+            x = x[:, x.shape[1] // 2:]  # 只保留下半部分
 
             x = torch.FloatTensor(x)  # {Tensor: {15, 48, 96}}
 
-            mel = torch.FloatTensor(mel.T).unsqueeze(0)
+            m = torch.FloatTensor(m.T).unsqueeze(0)
 
-            # x: {Tensor: (15, 48, 96)}
-            # mel: {Tensor: (1, 80, 16)}
-            # y: {Tensor: (1,)}
-            return x, mel, y
+            #
+            # x: {Tensor: (15, 48, 96)} -- 输入1（正或负样本）只保留了下半部分
+            # m: {Tensor: (1, 80, 16)}  -- 输入2（正样本）
+            # y: {Tensor: (1,)}         -- 标签（对应正负样本的标签）
+            #
+            return x, m, y
 
-        ###########################################################################
 
-
+##################################################################################################
 # 损失函数的定义
 logloss = nn.BCELoss()  # 交叉熵损失
 
@@ -234,6 +241,7 @@ def cosine_loss(a, v, y):  # 余弦相似度损失
     return loss
 
 
+##################################################################################################
 def train(
         device,
         model,
@@ -245,9 +253,9 @@ def train(
         nepochs=None  # 指定的EPOCH数
 ):
     #
-    global global_step, global_epoch
+    global global_steps, global_epoch
 
-    resumed_step = global_step
+    resumed_steps = global_steps
 
     while global_epoch < nepochs:
 
@@ -255,17 +263,21 @@ def train(
 
         prog_bar = tqdm(enumerate(train_data_loader))
 
-        for step, (x, mel, y) in prog_bar:
-
+        for step, (x, m, y) in prog_bar:
+            #
+            # x: {Tensor: (N, 15, 48, 96)} -- 输入1（正或负样本）只保留了下半部分
+            # m: {Tensor: (N, 1, 80, 16)}  -- 输入2（正样本）
+            # y: {Tensor: (N, 1,)}         -- 标签（对应正负样本的标签）
+            #
             model.train()
 
             optimizer.zero_grad()
 
             x = x.to(device)  # 补全模型的训练：transform data to cuda device
 
-            mel = mel.to(device)
+            m = m.to(device)
 
-            a, v = model(mel, x)  # 数据输入：
+            a, v = model(m, x)  # 数据输入：音频+脸图
 
             y = y.to(device)
 
@@ -275,29 +287,29 @@ def train(
 
             optimizer.step()
 
-            global_step += 1
+            global_steps += 1
 
-            cur_session_steps = global_step - resumed_step
+            cur_session_steps = global_steps - resumed_steps
 
             running_loss += loss.item()
 
-            if global_step == 1 or global_step % checkpoint_interval == 0:
+            if global_steps == 1 or global_steps % checkpoint_interval == 0:
                 #
                 save_checkpoint(
                     model,
                     optimizer,
-                    global_step,
+                    global_steps,
                     checkpoint_dir,
                     global_epoch
                 )
 
-            if global_step % hparams.syncnet_eval_interval == 0:
+            if global_steps % hparams.syncnet_eval_interval == 0:
                 #
                 with torch.no_grad():
                     #
                     eval_model(
                         tests_data_loader,
-                        global_step,
+                        global_steps,
                         device,
                         model,
                         checkpoint_dir
@@ -350,7 +362,7 @@ def save_checkpoint(model, optimizer, step, checkpoint_dir, epoch):
     # 保存训练的结果CHECKPOINT
     #
     checkpoint_path = join(
-        checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_step)
+        checkpoint_dir, "checkpoint_step{:09d}.pth".format(global_steps)
     )
 
     optimizer_state = optimizer.state_dict() if hparams.save_optimizer_state else None
@@ -382,7 +394,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
     #
     # 读取指定CHECKPOINT的保存信息
     #
-    global global_step
+    global global_steps
     global global_epoch
 
     print("load checkpoint from: {}".format(path))
@@ -401,8 +413,13 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False):
 
             optimizer.load_state_dict(checkpoint["optimizer"])
 
-    global_step = checkpoint["global_step"]
+    global_steps = checkpoint["global_step"]
     global_epoch = checkpoint["global_epoch"]
+
+    # checkpoint["state_dict"]
+    # checkpoint["optimizer"]
+    # checkpoint["global_steps"]
+    # checkpoint["global_epoch"]
 
     return model
 
@@ -461,16 +478,20 @@ if __name__ == "__main__":
 
     model = SyncNet().to(device)  # 定义SYNNET模型并加载到指定的DEVICE上
 
-    print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    print('total trainable params: syncnet {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     optimizer = optim.Adam(  # 定义优化器，使用ADAM（LR参考HPARAMS.PY文件)
-        [p for p in model.parameters() if p.requires_grad],  # 指定需要优化的参数
-        lr=hparams.syncnet_lr
+        [p for p in model.parameters() if p.requires_grad], lr=hparams.syncnet_lr  # 指定需要优化的参数
     )
 
     if checkpoint_path is not None:  # 加载预训练的模型
         #
-        load_checkpoint(checkpoint_path, model, optimizer, reset_optimizer=False)
+        load_checkpoint(
+            checkpoint_path,
+            model,
+            optimizer,
+            reset_optimizer=False
+        )
 
     train(
         device,
