@@ -10,8 +10,8 @@ import audio
 import torch
 
 from torch import nn
-from torch.nn import functional as F
 from torch import optim
+from torch.nn import functional as F
 
 import torch.backends.cudnn as cudnn
 
@@ -26,7 +26,7 @@ import os, random, cv2, argparse
 from hparams import hparams, get_image_list
 
 ##############################################################################
-parser = argparse.ArgumentParser(description='code to train the wav2Lip model with the visual quality discriminator')
+parser = argparse.ArgumentParser(description='code to train the wav2lip model with the visual quality discriminator')
 
 parser.add_argument(
     "--data_root",
@@ -52,13 +52,13 @@ parser.add_argument(
 parser.add_argument(
     '--checkpoint_path',
     help='resume generator from this checkpoint',
-    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip\checkpoint_step000165000.pth",  # TODO
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip\checkpoint_step000357000.pth",  # TODO
     type=str
 )
 parser.add_argument(
     '--disc_checkpoint_path',
     help='resume quality disc from this checkpoint',
-    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip\disc_checkpoint_step000165000.pth",  # TODO
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_hqwav2lip\ddisc_checkpoint_step000165000.pth",  # TODO
     type=str
 )
 
