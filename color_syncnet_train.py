@@ -42,7 +42,7 @@ parser.add_argument(
 parser.add_argument(
     '--checkpoint_path',
     help='resumed from this checkpoint',
-    default="F:\datasets\wav2lip96\lrs2\checkpoint_syncnet\checkpoint_step000380000.pth",  # TODO
+    default="F:\datasets\wav2lip96\lrs2\checkpoint_syncnet\checkpoint_step000540500.pth",  # TODO
     type=str
 )
 
